@@ -9,6 +9,7 @@
 #include <QMainWindow>
 #include <QTimer>
 #include "core/core.h"
+#include "core/frontend/emu_window.h"
 #include "ui_main.h"
 
 class Config;
@@ -24,6 +25,7 @@ class GRenderWindow;
 class MicroProfileDialog;
 class ProfilerWidget;
 class RegistersWidget;
+class StereoscopicControllerWidget;
 class WaitTreeWidget;
 
 class GMainWindow : public QMainWindow {
@@ -127,6 +129,8 @@ private slots:
     void ToggleWindowMode();
     void OnCreateGraphicsSurfaceViewer();
     void OnCoreError(Core::System::ResultStatus, std::string);
+    void OnDepthChanged(float v);
+    void OnStereoscopeModeChanged(EmuWindow::StereoscopicMode);
 
 private:
     void UpdateStatusBar();
@@ -150,6 +154,7 @@ private:
     std::unique_ptr<EmuThread> emu_thread;
 
     // Debugger panes
+    StereoscopicControllerWidget* stereoscopicControllerWidget;
     ProfilerWidget* profilerWidget;
     MicroProfileDialog* microProfileDialog;
     RegistersWidget* registersWidget;

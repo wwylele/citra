@@ -39,6 +39,8 @@ public:
         std::pair<unsigned, unsigned> min_client_area_size;
     };
 
+    enum StereoscopicMode { LeftOnly, RightOnly, Anaglyph };
+
     /// Swap buffers to display the next frame
     virtual void SwapBuffers() = 0;
 
@@ -88,6 +90,14 @@ public:
      * @see GetGyroscopeState for axis explanation.
      */
     void GyroscopeChanged(float x, float y, float z);
+
+    /**
+     * Signal that a 3d depth slider change has occurred
+     * @param value new value for 3d depth slider;
+     */
+    void DepthSliderChanged(float value);
+
+    void StereoscopicModeChanged(StereoscopicMode mode);
 
     /**
      * Gets the current touch screen state (touch X/Y coordinates and whether or not it is pressed).
@@ -147,6 +157,22 @@ public:
     }
 
     /**
+     * Gets the value of the 3D depth slider.
+     * @return float-type value
+     */
+    f32 GetDepthSliderValue() const {
+        return depth_slider;
+    }
+
+    /**
+     * Gets the stereoscopic mode.
+     * @return StereoscopicMode value
+     */
+    StereoscopicMode GetStereoscopicMode() const {
+        return stereoscopic_mode;
+    }
+
+    /**
      * Returns currently active configuration.
      * @note Accesses to the returned object need not be consistent because it may be modified in
      * another thread
@@ -193,6 +219,8 @@ protected:
         gyro_x = 0;
         gyro_y = 0;
         gyro_z = 0;
+        depth_slider = 0.0f;
+        stereoscopic_mode = Anaglyph;
     }
     virtual ~EmuWindow() {}
 
@@ -264,6 +292,10 @@ private:
     s16 gyro_x; ///< Gyroscope X-axis value in native 3DS units
     s16 gyro_y; ///< Gyroscope Y-axis value in native 3DS units
     s16 gyro_z; ///< Gyroscope Z-axis value in native 3DS units
+
+    f32 depth_slider; ///< 3D depth slider (0.0-1.0)
+
+    StereoscopicMode stereoscopic_mode; ///< stereoscopic mode
 
     /**
      * Clip the provided coordinates to be inside the touchscreen area.
