@@ -449,11 +449,7 @@ ResultCode FormatConfig() {
     return RESULT_SUCCESS;
 }
 
-void Init() {
-    AddService(new CFG_I_Interface);
-    AddService(new CFG_S_Interface);
-    AddService(new CFG_U_Interface);
-
+ResultCode LoadConfigNANDSaveFile() {
     // Open the SystemSaveData archive 0x00010017
     FileSys::Path archive_path(cfg_system_savedata_id);
     auto archive_result = Service::FS::OpenArchive(Service::FS::ArchiveIdCode::SystemSaveData, archive_path);
@@ -481,13 +477,72 @@ void Init() {
     if (config_result.Succeeded()) {
         auto config = config_result.MoveFrom();
         config->backend->Read(0, CONFIG_SAVEFILE_SIZE, cfg_config_file_buffer.data());
-        return;
+        return RESULT_SUCCESS;
     }
 
-    FormatConfig();
+    return FormatConfig();
+}
+
+void Init() {
+    AddService(new CFG_I_Interface);
+    AddService(new CFG_S_Interface);
+    AddService(new CFG_U_Interface);
+
+    LoadConfigNANDSaveFile();
 }
 
 void Shutdown() {
+}
+
+void SetUsername(std::u16string name) {
+    ASSERT(name.size() <= 10);
+    UsernameBlock block{};
+    name.copy(block.username, name.size());
+    SetConfigInfoBlock(UsernameBlockID, sizeof(block), 4, &block);
+}
+
+std::u16string GetUsername() {
+    UsernameBlock block;
+    GetConfigInfoBlock(UsernameBlockID, sizeof(block), 8, &block);
+
+    // the username string in the block isn't null-terminated,
+    // so copy it to a buffer to add trailing null char.
+    char16_t username[ARRAY_SIZE(block.username) + 1]{};
+    memcpy(username, &block.username, sizeof(block.username));
+    return std::u16string(username);
+}
+
+void SetBirthday(u8 month, u8 day) {
+    BirthdayBlock block = { month, day };
+    SetConfigInfoBlock(BirthdayBlockID, sizeof(block), 4, &block);
+}
+
+std::tuple<u8, u8> GetBirthday() {
+    BirthdayBlock block;
+    GetConfigInfoBlock(BirthdayBlockID, sizeof(block), 8, &block);
+    return std::make_tuple(block.month, block.day);
+}
+
+void SetSystemLanguage(SystemLanguage language) {
+    u8 block = language;
+    SetConfigInfoBlock(LanguageBlockID, sizeof(block), 4, &block);
+}
+
+SystemLanguage GetSystemLanguage() {
+    u8 block;
+    GetConfigInfoBlock(LanguageBlockID, sizeof(block), 8, &block);
+    return static_cast<SystemLanguage>(block);
+}
+
+void SetSoundOutputMode(SoundOutputMode mode) {
+    u8 block = mode;
+    SetConfigInfoBlock(SoundOutputModeBlockID, sizeof(block), 4, &block);
+}
+
+SoundOutputMode GetSoundOutputMode() {
+    u8 block;
+    GetConfigInfoBlock(SoundOutputModeBlockID, sizeof(block), 8, &block);
+    return static_cast<SoundOutputMode>(block);
 }
 
 } // namespace CFG
