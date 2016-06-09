@@ -10,7 +10,7 @@ namespace CFG {
 
 const Interface::FunctionInfo FunctionTable[] = {
     // cfg common
-    {0x00010082, GetConfigInfoBlk2,                    "GetConfigInfoBlk2"},
+    {0x00010082, GetConfigInfoBlkUser,                 "GetConfigInfoBlkUser"},
     {0x00020000, SecureInfoGetRegion,                  "SecureInfoGetRegion"},
     {0x00030040, GenHashConsoleUnique,                 "GenHashConsoleUnique"},
     {0x00040000, GetRegionCanadaUSA,                   "GetRegionCanadaUSA"},
@@ -21,8 +21,8 @@ const Interface::FunctionInfo FunctionTable[] = {
     {0x00090040, GetCountryCodeString,                 "GetCountryCodeString"},
     {0x000A0040, GetCountryCodeID,                     "GetCountryCodeID"},
     // cfg:s
-    {0x04010082, GetConfigInfoBlk8,                    "GetConfigInfoBlk8"},
-    {0x04020082, SetConfigInfoBlk4,                    "SetConfigInfoBlk4"},
+    {0x04010082, GetConfigInfoBlkSystem,               "GetConfigInfoBlkSystem"},
+    {0x04020082, SetConfigInfoBlkSystem,               "SetConfigInfoBlkSystem"},
     {0x04030000, UpdateConfigNANDSavegame,             "UpdateConfigNANDSavegame"},
     {0x04040042, nullptr,                              "GetLocalFriendCodeSeedData"},
     {0x04050000, nullptr,                              "GetLocalFriendCodeSeed"},
