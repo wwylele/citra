@@ -13,6 +13,7 @@ set(SRCS
             memory_util.cpp
             microprofile.cpp
             misc.cpp
+            motion_emu.cpp
             profiler.cpp
             scm_rev.cpp
             string_util.cpp
@@ -46,6 +47,7 @@ set(HEADERS
             memory_util.h
             microprofile.h
             microprofileui.h
+            motion_emu.h
             platform.h
             profiler_reporting.h
             scm_rev.h

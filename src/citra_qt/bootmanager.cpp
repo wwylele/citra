@@ -12,6 +12,7 @@
 
 #include "common/key_map.h"
 #include "common/microprofile.h"
+#include "common/motion_emu.h"
 #include "common/scm_rev.h"
 #include "common/string_util.h"
 
@@ -229,6 +230,7 @@ qreal GRenderWindow::windowPixelRatio()
 }
 
 void GRenderWindow::closeEvent(QCloseEvent* event) {
+    MotionEmu::Shutdown();
     emit Closed();
     QWidget::closeEvent(event);
 }
@@ -245,12 +247,13 @@ void GRenderWindow::keyReleaseEvent(QKeyEvent* event)
 
 void GRenderWindow::mousePressEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::LeftButton)
-    {
-        auto pos = event->pos();
+    auto pos = event->pos();
+    if (event->button() == Qt::LeftButton) {
         qreal pixelRatio = windowPixelRatio();
         this->TouchPressed(static_cast<unsigned>(pos.x() * pixelRatio),
                            static_cast<unsigned>(pos.y() * pixelRatio));
+    } else if (event->button() == Qt::RightButton) {
+        MotionEmu::BeginTilt(pos.x(), pos.y());
     }
 }
 
@@ -260,12 +263,15 @@ void GRenderWindow::mouseMoveEvent(QMouseEvent *event)
     qreal pixelRatio = windowPixelRatio();
     this->TouchMoved(std::max(static_cast<unsigned>(pos.x() * pixelRatio), 0u),
                      std::max(static_cast<unsigned>(pos.y() * pixelRatio), 0u));
+    MotionEmu::Tilt(pos.x(), pos.y());
 }
 
 void GRenderWindow::mouseReleaseEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton)
         this->TouchReleased();
+    else if (event->button() == Qt::RightButton)
+        MotionEmu::EndTilt();
 }
 
 void GRenderWindow::ReloadSetKeymaps()
@@ -286,11 +292,13 @@ void GRenderWindow::OnMinimalClientAreaChangeRequest(const std::pair<unsigned,un
 }
 
 void GRenderWindow::OnEmulationStarting(EmuThread* emu_thread) {
+    MotionEmu::Init(*this);
     this->emu_thread = emu_thread;
     child->DisablePainting();
 }
 
 void GRenderWindow::OnEmulationStopping() {
+    MotionEmu::Shutdown();
     emu_thread = nullptr;
     child->EnablePainting();
 }

@@ -173,6 +173,18 @@ Vec2<T> operator * (const V& f, const Vec2<T>& vec)
 
 typedef Vec2<float> Vec2f;
 
+template<>
+inline float Vec2<float>::Length() const {
+    return std::sqrt(x * x + y * y);
+}
+
+template<>
+inline float Vec2<float>::Normalize() {
+    float length = Length();
+    *this /= length;
+    return length;
+}
+
 template<typename T>
 class Vec3
 {
@@ -341,6 +353,12 @@ inline Vec3<float> Vec3<float>::Normalized() const {
     return *this / Length();
 }
 
+template<>
+inline float Vec3<float>::Normalize() {
+    float length = Length();
+    *this /= length;
+    return length;
+}
 
 typedef Vec3<float> Vec3f;
 

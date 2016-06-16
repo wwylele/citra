@@ -13,6 +13,7 @@
 
 #include "common/key_map.h"
 #include "common/logging/log.h"
+#include "common/motion_emu.h"
 #include "common/scm_rev.h"
 #include "common/string_util.h"
 
@@ -25,16 +26,22 @@
 
 void EmuWindow_SDL2::OnMouseMotion(s32 x, s32 y) {
     TouchMoved((unsigned)std::max(x, 0), (unsigned)std::max(y, 0));
+    MotionEmu::Tilt(x, y);
 }
 
 void EmuWindow_SDL2::OnMouseButton(u32 button, u8 state, s32 x, s32 y) {
-    if (button != SDL_BUTTON_LEFT)
-        return;
-
-    if (state == SDL_PRESSED) {
-        TouchPressed((unsigned)std::max(x, 0), (unsigned)std::max(y, 0));
-    } else {
-        TouchReleased();
+    if (button == SDL_BUTTON_LEFT) {
+        if (state == SDL_PRESSED) {
+            TouchPressed((unsigned)std::max(x, 0), (unsigned)std::max(y, 0));
+        } else {
+            TouchReleased();
+        }
+    } else if (button == SDL_BUTTON_RIGHT) {
+        if (state == SDL_PRESSED) {
+            MotionEmu::BeginTilt(x, y);
+        } else {
+            MotionEmu::EndTilt();
+        }
     }
 }
 
@@ -62,6 +69,7 @@ EmuWindow_SDL2::EmuWindow_SDL2() {
     keyboard_id = KeyMap::NewDeviceId();
 
     ReloadSetKeymaps();
+    MotionEmu::Init(*this);
 
     SDL_SetMainReady();
 
@@ -115,6 +123,7 @@ EmuWindow_SDL2::EmuWindow_SDL2() {
 EmuWindow_SDL2::~EmuWindow_SDL2() {
     SDL_GL_DeleteContext(gl_context);
     SDL_Quit();
+    MotionEmu::Shutdown();
 }
 
 void EmuWindow_SDL2::SwapBuffers() {
