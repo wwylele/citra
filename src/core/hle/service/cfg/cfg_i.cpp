@@ -10,7 +10,7 @@ namespace CFG {
 
 const Interface::FunctionInfo FunctionTable[] = {
     // cfg common
-    {0x00010082, GetConfigInfoBlk2,                    "GetConfigInfoBlk2"},
+    {0x00010082, GetConfigInfoBlkUser,                 "GetConfigInfoBlkUser"},
     {0x00020000, SecureInfoGetRegion,                  "SecureInfoGetRegion"},
     {0x00030040, GenHashConsoleUnique,                 "GenHashConsoleUnique"},
     {0x00040000, GetRegionCanadaUSA,                   "GetRegionCanadaUSA"},
@@ -21,8 +21,8 @@ const Interface::FunctionInfo FunctionTable[] = {
     {0x00090040, GetCountryCodeString,                 "GetCountryCodeString"},
     {0x000A0040, GetCountryCodeID,                     "GetCountryCodeID"},
     // cfg:i
-    {0x04010082, GetConfigInfoBlk8,                    "GetConfigInfoBlk8"},
-    {0x04020082, nullptr,                              "SetConfigInfoBlk4"},
+    {0x04010082, GetConfigInfoBlkSystem,               "GetConfigInfoBlk8"},
+    {0x04020082, SetConfigInfoBlkSystem,               "SetConfigInfoBlk4"},
     {0x04030000, UpdateConfigNANDSavegame,             "UpdateConfigNANDSavegame"},
     {0x04040042, nullptr,                              "GetLocalFriendCodeSeedData"},
     {0x04050000, nullptr,                              "GetLocalFriendCodeSeed"},
@@ -30,8 +30,8 @@ const Interface::FunctionInfo FunctionTable[] = {
     {0x04070000, nullptr,                              "SecureInfoGetByte101"},
     {0x04080042, nullptr,                              "SecureInfoGetSerialNo"},
     {0x04090000, nullptr,                              "UpdateConfigBlk00040003"},
-    {0x08010082, GetConfigInfoBlk8,                    "GetConfigInfoBlk8"},
-    {0x08020082, nullptr,                              "SetConfigInfoBlk4"},
+    {0x08010082, GetConfigInfoBlkSystem,               "GetConfigInfoBlkSystem"},
+    {0x08020082, SetConfigInfoBlkSystem,               "SetConfigInfoBlkSystem"},
     {0x08030000, UpdateConfigNANDSavegame,             "UpdateConfigNANDSavegame"},
     {0x080400C2, nullptr,                              "CreateConfigInfoBlk"},
     {0x08050000, nullptr,                              "DeleteConfigNANDSavefile"},

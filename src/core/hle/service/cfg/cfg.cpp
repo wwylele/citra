@@ -40,6 +40,20 @@ struct SaveFileConfig {
 };
 static_assert(sizeof(SaveFileConfig) == 0x455C, "SaveFileConfig header must be exactly 0x455C bytes");
 
+enum ConfigBlockID {
+    StereoCameraSettingsBlockID = 0x00050005,
+    SoundOutputModeBlockID = 0x00070001,
+    ConsoleUniqueIDBlockID = 0x00090001,
+    UsernameBlockID = 0x000A0000,
+    BirthdayBlockID = 0x000A0001,
+    LanguageBlockID = 0x000A0002,
+    CountryInfoBlockID = 0x000B0000,
+    CountryNameBlockID = 0x000B0001,
+    StateNameBlockID = 0x000B0002,
+    EULAVersionBlockID = 0x000D0000,
+    ConsoleModelBlockID = 0x000F0004,
+};
+
 struct UsernameBlock {
     char16_t username[10]; ///< Exactly 20 bytes long, padded with zeros at the end if necessary
     u32 zero;
@@ -73,8 +87,7 @@ static const ConsoleModelInfo CONSOLE_MODEL = { NINTENDO_3DS_XL, { 0, 0, 0 } };
 static const u8 CONSOLE_LANGUAGE = LANGUAGE_EN;
 static const UsernameBlock CONSOLE_USERNAME_BLOCK = { u"CITRA", 0, 0 };
 static const BirthdayBlock PROFILE_BIRTHDAY = { 3, 25 }; // March 25th, 2014
-/// TODO(Subv): Find out what this actually is
-static const u8 SOUND_OUTPUT_MODE = 2;
+static const u8 SOUND_OUTPUT_MODE = SOUND_SURROUND;
 static const u8 UNITED_STATES_COUNTRY_ID = 49;
 /// TODO(Subv): Find what the other bytes are
 static const ConsoleCountryInfo COUNTRY_INFO = { { 0, 0, 0 }, UNITED_STATES_COUNTRY_ID };
@@ -192,7 +205,7 @@ void GetModelNintendo2DS(Service::Interface* self) {
         cmd_buff[2] = 1;
 }
 
-void GetConfigInfoBlk2(Service::Interface* self) {
+void GetConfigInfoBlkUser(Service::Interface* self) {
     u32* cmd_buff = Kernel::GetCommandBuffer();
     u32 size = cmd_buff[1];
     u32 block_id = cmd_buff[2];
@@ -204,11 +217,11 @@ void GetConfigInfoBlk2(Service::Interface* self) {
     }
 
     std::vector<u8> data(size);
-    cmd_buff[1] = Service::CFG::GetConfigInfoBlock(block_id, size, 0x2, data.data()).raw;
+    cmd_buff[1] = Service::CFG::GetConfigInfoBlock(block_id, size, false, data.data()).raw;
     Memory::WriteBlock(data_pointer, data.data(), data.size());
 }
 
-void GetConfigInfoBlk8(Service::Interface* self) {
+void GetConfigInfoBlkSystem(Service::Interface* self) {
     u32* cmd_buff = Kernel::GetCommandBuffer();
     u32 size = cmd_buff[1];
     u32 block_id = cmd_buff[2];
@@ -220,8 +233,24 @@ void GetConfigInfoBlk8(Service::Interface* self) {
     }
 
     std::vector<u8> data(size);
-    cmd_buff[1] = Service::CFG::GetConfigInfoBlock(block_id, size, 0x8, data.data()).raw;
+    cmd_buff[1] = Service::CFG::GetConfigInfoBlock(block_id, size, true, data.data()).raw;
     Memory::WriteBlock(data_pointer, data.data(), data.size());
+}
+
+void SetConfigInfoBlkSystem(Service::Interface* self) {
+    u32* cmd_buff = Kernel::GetCommandBuffer();
+    u32 block_id = cmd_buff[1];
+    u32 size = cmd_buff[2];
+    VAddr data_pointer = cmd_buff[4];
+
+    if (!Memory::IsValidVirtualAddress(data_pointer)) {
+        cmd_buff[1] = -1; // TODO(Subv): Find the right error code
+        return;
+    }
+
+    std::vector<u8> data(size);
+    Memory::ReadBlock(data_pointer, data.data(), data.size());
+    cmd_buff[1] = Service::CFG::SetConfigInfoBlock(block_id, size, true, data.data()).raw;
 }
 
 void UpdateConfigNANDSavegame(Service::Interface* self) {
@@ -234,41 +263,68 @@ void FormatConfig(Service::Interface* self) {
     cmd_buff[1] = Service::CFG::FormatConfig().raw;
 }
 
-ResultCode GetConfigInfoBlock(u32 block_id, u32 size, u32 flag, u8* output) {
+static bool CheckPermission(ConfigPermission permissions, ConfigPermission request) {
+    return (static_cast<u16>(permissions) & static_cast<u16>(request)) != 0;
+}
+
+static ResultVal<void*> GetConfigInfoBlockPointer(u32 block_id, u32 size, ConfigPermission permission) {
     // Read the header
     SaveFileConfig* config = reinterpret_cast<SaveFileConfig*>(cfg_config_file_buffer.data());
 
     auto itr = std::find_if(std::begin(config->block_entries), std::end(config->block_entries),
         [&](const SaveConfigBlockEntry& entry) {
-            return entry.block_id == block_id && (entry.flags & flag);
+            return entry.block_id == block_id;
         });
 
     if (itr == std::end(config->block_entries)) {
-        LOG_ERROR(Service_CFG, "Config block 0x%X with flags %u and size %u was not found", block_id, flag, size);
+        LOG_ERROR(Service_CFG, "Config block 0x%X with permission %u and size %u was not found", block_id, static_cast<u16>(permission), size);
         return ResultCode(ErrorDescription::NotFound, ErrorModule::Config, ErrorSummary::WrongArgument, ErrorLevel::Permanent);
     }
 
+    if (!CheckPermission(itr->permissions, permission)) {
+        LOG_ERROR(Service_CFG, "Invalid permission %u for config block 0x%X with size %u", static_cast<u16>(permission), block_id, size);
+        return ResultCode(ErrorDescription::NotAuthorized, ErrorModule::Config, ErrorSummary::WrongArgument, ErrorLevel::Permanent);
+    }
+
     if (itr->size != size) {
-        LOG_ERROR(Service_CFG, "Invalid size %u for config block 0x%X with flags %u", size, block_id, flag);
+        LOG_ERROR(Service_CFG, "Invalid size %u for config block 0x%X with permission %u", size, block_id, static_cast<u16>(permission));
         return ResultCode(ErrorDescription::InvalidSize, ErrorModule::Config, ErrorSummary::WrongArgument, ErrorLevel::Permanent);
     }
 
+    void* pointer;
+
     // The data is located in the block header itself if the size is less than 4 bytes
     if (itr->size <= 4)
-        memcpy(output, &itr->offset_or_data, itr->size);
+        pointer = &itr->offset_or_data;
     else
-        memcpy(output, &cfg_config_file_buffer[itr->offset_or_data], itr->size);
+        pointer = &cfg_config_file_buffer[itr->offset_or_data];
 
+    return ResultVal<void*>::WithCode(RESULT_SUCCESS, pointer);
+}
+
+ResultCode GetConfigInfoBlock(u32 block_id, u32 size, bool system_permission, void* output) {
+    void* pointer;
+    CASCADE_RESULT(pointer, GetConfigInfoBlockPointer(block_id, size,
+        system_permission ? ConfigPermission::SystemRead : ConfigPermission::UserRead));
+    memcpy(output, pointer, size);
     return RESULT_SUCCESS;
 }
 
-ResultCode CreateConfigInfoBlk(u32 block_id, u16 size, u16 flags, const void* data) {
+ResultCode SetConfigInfoBlock(u32 block_id, u32 size, bool system_permission, void* input) {
+    void* pointer;
+    CASCADE_RESULT(pointer, GetConfigInfoBlockPointer(block_id, size,
+        system_permission ? ConfigPermission::SystemWrite : ConfigPermission::UserWrite));
+    memcpy(pointer, input, size);
+    return RESULT_SUCCESS;
+}
+
+ResultCode CreateConfigInfoBlk(u32 block_id, u16 size, ConfigPermission permissions, const void* data) {
     SaveFileConfig* config = reinterpret_cast<SaveFileConfig*>(cfg_config_file_buffer.data());
     if (config->total_entries >= CONFIG_FILE_MAX_BLOCK_ENTRIES)
         return ResultCode(-1); // TODO(Subv): Find the right error code
 
     // Insert the block header with offset 0 for now
-    config->block_entries[config->total_entries] = { block_id, 0, size, flags };
+    config->block_entries[config->total_entries] = { block_id, 0, size, permissions };
     if (size > 4) {
         u32 offset = config->data_entries_offset;
         // Perform a search to locate the next offset for the new data
@@ -333,28 +389,28 @@ ResultCode FormatConfig() {
     u8 zero_buffer[0xC0] = {};
 
     // 0x00030001 - Unknown
-    res = CreateConfigInfoBlk(0x00030001, 0x8, 0xE, zero_buffer);
+    res = CreateConfigInfoBlk(0x00030001, 0x8, ConfigPermission::Public, zero_buffer);
     if (!res.IsSuccess()) return res;
 
-    res = CreateConfigInfoBlk(0x00050005, sizeof(STEREO_CAMERA_SETTINGS), 0xE, STEREO_CAMERA_SETTINGS.data());
+    res = CreateConfigInfoBlk(StereoCameraSettingsBlockID, sizeof(STEREO_CAMERA_SETTINGS), ConfigPermission::Public, STEREO_CAMERA_SETTINGS.data());
     if (!res.IsSuccess()) return res;
 
-    res = CreateConfigInfoBlk(0x00070001, sizeof(SOUND_OUTPUT_MODE), 0xE, &SOUND_OUTPUT_MODE);
+    res = CreateConfigInfoBlk(SoundOutputModeBlockID, sizeof(SOUND_OUTPUT_MODE), ConfigPermission::Public, &SOUND_OUTPUT_MODE);
     if (!res.IsSuccess()) return res;
 
-    res = CreateConfigInfoBlk(0x00090001, sizeof(CONSOLE_UNIQUE_ID), 0xE, &CONSOLE_UNIQUE_ID);
+    res = CreateConfigInfoBlk(ConsoleUniqueIDBlockID, sizeof(CONSOLE_UNIQUE_ID), ConfigPermission::Public, &CONSOLE_UNIQUE_ID);
     if (!res.IsSuccess()) return res;
 
-    res = CreateConfigInfoBlk(0x000A0000, sizeof(CONSOLE_USERNAME_BLOCK), 0xE, &CONSOLE_USERNAME_BLOCK);
+    res = CreateConfigInfoBlk(UsernameBlockID, sizeof(CONSOLE_USERNAME_BLOCK), ConfigPermission::Public, &CONSOLE_USERNAME_BLOCK);
     if (!res.IsSuccess()) return res;
 
-    res = CreateConfigInfoBlk(0x000A0001, sizeof(PROFILE_BIRTHDAY), 0xE, &PROFILE_BIRTHDAY);
+    res = CreateConfigInfoBlk(BirthdayBlockID, sizeof(PROFILE_BIRTHDAY), ConfigPermission::Public, &PROFILE_BIRTHDAY);
     if (!res.IsSuccess()) return res;
 
-    res = CreateConfigInfoBlk(0x000A0002, sizeof(CONSOLE_LANGUAGE), 0xE, &CONSOLE_LANGUAGE);
+    res = CreateConfigInfoBlk(LanguageBlockID, sizeof(CONSOLE_LANGUAGE), ConfigPermission::Public, &CONSOLE_LANGUAGE);
     if (!res.IsSuccess()) return res;
 
-    res = CreateConfigInfoBlk(0x000B0000, sizeof(COUNTRY_INFO), 0xE, &COUNTRY_INFO);
+    res = CreateConfigInfoBlk(CountryInfoBlockID, sizeof(COUNTRY_INFO), ConfigPermission::Public, &COUNTRY_INFO);
     if (!res.IsSuccess()) return res;
 
     u16_le country_name_buffer[16][0x40] = {};
@@ -363,33 +419,33 @@ ResultCode FormatConfig() {
         std::copy(region_name.cbegin(), region_name.cend(), country_name_buffer[i]);
     }
     // 0x000B0001 - Localized names for the profile Country
-    res = CreateConfigInfoBlk(0x000B0001, sizeof(country_name_buffer), 0xE, country_name_buffer);
+    res = CreateConfigInfoBlk(CountryNameBlockID, sizeof(country_name_buffer), ConfigPermission::Public, country_name_buffer);
     if (!res.IsSuccess()) return res;
     // 0x000B0002 - Localized names for the profile State/Province
-    res = CreateConfigInfoBlk(0x000B0002, sizeof(country_name_buffer), 0xE, country_name_buffer);
+    res = CreateConfigInfoBlk(StateNameBlockID, sizeof(country_name_buffer), ConfigPermission::Public, country_name_buffer);
     if (!res.IsSuccess()) return res;
 
     // 0x000B0003 - Unknown, related to country/address (zip code?)
-    res = CreateConfigInfoBlk(0x000B0003, 0x4, 0xE, zero_buffer);
+    res = CreateConfigInfoBlk(0x000B0003, 0x4, ConfigPermission::Public, zero_buffer);
     if (!res.IsSuccess()) return res;
 
     // 0x000C0000 - Unknown
-    res = CreateConfigInfoBlk(0x000C0000, 0xC0, 0xE, zero_buffer);
+    res = CreateConfigInfoBlk(0x000C0000, 0xC0, ConfigPermission::Public, zero_buffer);
     if (!res.IsSuccess()) return res;
 
     // 0x000C0001 - Unknown
-    res = CreateConfigInfoBlk(0x000C0001, 0x14, 0xE, zero_buffer);
+    res = CreateConfigInfoBlk(0x000C0001, 0x14, ConfigPermission::Public, zero_buffer);
     if (!res.IsSuccess()) return res;
 
     // 0x000D0000 - Accepted EULA version
-    res = CreateConfigInfoBlk(0x000D0000, 0x4, 0xE, zero_buffer);
+    res = CreateConfigInfoBlk(EULAVersionBlockID, 0x4, ConfigPermission::Public, zero_buffer);
     if (!res.IsSuccess()) return res;
 
-    res = CreateConfigInfoBlk(0x000F0004, sizeof(CONSOLE_MODEL), 0xC, &CONSOLE_MODEL);
+    res = CreateConfigInfoBlk(ConsoleModelBlockID, sizeof(CONSOLE_MODEL), ConfigPermission::Private, &CONSOLE_MODEL);
     if (!res.IsSuccess()) return res;
 
     // 0x00170000 - Unknown
-    res = CreateConfigInfoBlk(0x00170000, 0x4, 0xE, zero_buffer);
+    res = CreateConfigInfoBlk(0x00170000, 0x4, ConfigPermission::Public, zero_buffer);
     if (!res.IsSuccess()) return res;
 
     // Save the buffer to the file
@@ -399,11 +455,7 @@ ResultCode FormatConfig() {
     return RESULT_SUCCESS;
 }
 
-void Init() {
-    AddService(new CFG_I_Interface);
-    AddService(new CFG_S_Interface);
-    AddService(new CFG_U_Interface);
-
+ResultCode LoadConfigNANDSaveFile() {
     // Open the SystemSaveData archive 0x00010017
     FileSys::Path archive_path(cfg_system_savedata_id);
     auto archive_result = Service::FS::OpenArchive(Service::FS::ArchiveIdCode::SystemSaveData, archive_path);
@@ -431,13 +483,72 @@ void Init() {
     if (config_result.Succeeded()) {
         auto config = config_result.MoveFrom();
         config->backend->Read(0, CONFIG_SAVEFILE_SIZE, cfg_config_file_buffer.data());
-        return;
+        return RESULT_SUCCESS;
     }
 
-    FormatConfig();
+    return FormatConfig();
+}
+
+void Init() {
+    AddService(new CFG_I_Interface);
+    AddService(new CFG_S_Interface);
+    AddService(new CFG_U_Interface);
+
+    LoadConfigNANDSaveFile();
 }
 
 void Shutdown() {
+}
+
+void SetUsername(std::u16string name) {
+    ASSERT(name.size() <= 10);
+    UsernameBlock block{};
+    name.copy(block.username, name.size());
+    SetConfigInfoBlock(UsernameBlockID, sizeof(block), true, &block);
+}
+
+std::u16string GetUsername() {
+    UsernameBlock block;
+    GetConfigInfoBlock(UsernameBlockID, sizeof(block), true, &block);
+
+    // the username string in the block isn't null-terminated,
+    // so copy it to a buffer to add trailing null char.
+    char16_t username[ARRAY_SIZE(block.username) + 1]{};
+    memcpy(username, &block.username, sizeof(block.username));
+    return std::u16string(username);
+}
+
+void SetBirthday(u8 month, u8 day) {
+    BirthdayBlock block = { month, day };
+    SetConfigInfoBlock(BirthdayBlockID, sizeof(block), true, &block);
+}
+
+std::tuple<u8, u8> GetBirthday() {
+    BirthdayBlock block;
+    GetConfigInfoBlock(BirthdayBlockID, sizeof(block), true, &block);
+    return std::make_tuple(block.month, block.day);
+}
+
+void SetSystemLanguage(SystemLanguage language) {
+    u8 block = language;
+    SetConfigInfoBlock(LanguageBlockID, sizeof(block), true, &block);
+}
+
+SystemLanguage GetSystemLanguage() {
+    u8 block;
+    GetConfigInfoBlock(LanguageBlockID, sizeof(block), true, &block);
+    return static_cast<SystemLanguage>(block);
+}
+
+void SetSoundOutputMode(SoundOutputMode mode) {
+    u8 block = mode;
+    SetConfigInfoBlock(SoundOutputModeBlockID, sizeof(block), true, &block);
+}
+
+SoundOutputMode GetSoundOutputMode() {
+    u8 block;
+    GetConfigInfoBlock(SoundOutputModeBlockID, sizeof(block), true, &block);
+    return static_cast<SoundOutputMode>(block);
 }
 
 } // namespace CFG
