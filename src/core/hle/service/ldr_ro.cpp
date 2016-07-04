@@ -1788,7 +1788,7 @@ static void LoadCRR(Service::Interface* self) {
     u32 crr_size       = cmd_buff[2];
     u32 process        = cmd_buff[4];
 
-    cmd_buff[0] = IPC::MakeHeader(1, 1, 0);
+    cmd_buff[0] = IPC::MakeHeader(2, 1, 0);
 
     cmd_buff[1] = RESULT_SUCCESS.raw; // No error
 
@@ -1811,7 +1811,7 @@ static void UnloadCRR(Service::Interface* self) {
     u32 crr_buffer_ptr = cmd_buff[1];
     u32 process        = cmd_buff[3];
 
-    cmd_buff[0] = IPC::MakeHeader(1, 1, 0);
+    cmd_buff[0] = IPC::MakeHeader(3, 1, 0);
 
     cmd_buff[1] = RESULT_SUCCESS.raw; // No error
 
@@ -1864,7 +1864,7 @@ static void LoadCRO(Service::Interface* self) {
         auto_link ? "true" : "false", fix_level, crr_address
         );
 
-    cmd_buff[0] = IPC::MakeHeader(1, 2, 0);
+    cmd_buff[0] = IPC::MakeHeader(link_on_load_bug_fix ? 9 : 4, 2, 0);
 
     if (!loaded_crs) {
         LOG_ERROR(Service_LDR, "Not initialized");
@@ -2000,7 +2000,7 @@ static void UnloadCRO(Service::Interface* self) {
 
     LOG_WARNING(Service_LDR, "Unloading CRO \"%s\" at 0x%08X", cro.ModuleName().data(), cro_address);
 
-    cmd_buff[0] = IPC::MakeHeader(1, 1, 0);
+    cmd_buff[0] = IPC::MakeHeader(5, 1, 0);
 
     if (!loaded_crs) {
         LOG_ERROR(Service_LDR, "Not initialized");
@@ -2068,7 +2068,7 @@ static void LinkCRO(Service::Interface* self) {
     CROHelper cro(cro_address);
     LOG_WARNING(Service_LDR, "Linking CRO \"%s\"", cro.ModuleName().data());
 
-    cmd_buff[0] = IPC::MakeHeader(1, 1, 0);
+    cmd_buff[0] = IPC::MakeHeader(6, 1, 0);
 
     if (!loaded_crs) {
         LOG_ERROR(Service_LDR, "Not initialized");
@@ -2116,7 +2116,7 @@ static void UnlinkCRO(Service::Interface* self) {
     CROHelper cro(cro_address);
     LOG_WARNING(Service_LDR, "Unlinking CRO \"%s\"", cro.ModuleName().data());
 
-    cmd_buff[0] = IPC::MakeHeader(1, 1, 0);
+    cmd_buff[0] = IPC::MakeHeader(7, 1, 0);
 
     if (!loaded_crs) {
         LOG_ERROR(Service_LDR, "Not initialized");
@@ -2168,7 +2168,7 @@ static void Shutdown(Service::Interface* self) {
         return;
     }
 
-    cmd_buff[0] = IPC::MakeHeader(1, 1, 0);
+    cmd_buff[0] = IPC::MakeHeader(8, 1, 0);
 
     CROHelper crs(loaded_crs);
     crs.Unrebase(true);
