@@ -1786,19 +1786,37 @@ static void LoadCRR(Service::Interface* self) {
     u32* cmd_buff = Kernel::GetCommandBuffer();
     u32 crr_buffer_ptr = cmd_buff[1];
     u32 crr_size       = cmd_buff[2];
-    u32 value          = cmd_buff[3];
     u32 process        = cmd_buff[4];
 
-    if (value != 0) {
-        LOG_ERROR(Service_LDR, "This value should be zero, but is actually %u!", value);
-    }
-
-    // TODO(purpasmart96): Verify return header on HW
+    cmd_buff[0] = IPC::MakeHeader(1, 1, 0);
 
     cmd_buff[1] = RESULT_SUCCESS.raw; // No error
 
-    LOG_WARNING(Service_LDR, "(STUBBED) called. crr_buffer_ptr=0x%08X, crr_size=0x%08X, value=0x%08X, process=0x%08X",
-                crr_buffer_ptr, crr_size, value, process);
+    LOG_WARNING(Service_LDR, "(STUBBED) called. crr_buffer_ptr=0x%08X, crr_size=0x%08X, process=0x%08X",
+                crr_buffer_ptr, crr_size, process);
+}
+
+/**
+ * LDR_RO::UnloadCRR service function
+ *  Inputs:
+ *      1 : CRR buffer pointer
+ *      2 : Copy handle descriptor (zero)
+ *      3 : KProcess handle
+ *  Outputs:
+ *      0 : Return header
+ *      1 : Result of function, 0 on success, otherwise error code
+ */
+static void UnloadCRR(Service::Interface* self) {
+    u32* cmd_buff = Kernel::GetCommandBuffer();
+    u32 crr_buffer_ptr = cmd_buff[1];
+    u32 process        = cmd_buff[3];
+
+    cmd_buff[0] = IPC::MakeHeader(1, 1, 0);
+
+    cmd_buff[1] = RESULT_SUCCESS.raw; // No error
+
+    LOG_WARNING(Service_LDR, "(STUBBED) called. crr_buffer_ptr=0x%08X, process=0x%08X",
+                crr_buffer_ptr, process);
 }
 
 /**
@@ -2170,7 +2188,7 @@ static void Shutdown(Service::Interface* self) {
 const Interface::FunctionInfo FunctionTable[] = {
     {0x000100C2, Initialize,            "Initialize"},
     {0x00020082, LoadCRR,               "LoadCRR"},
-    {0x00030042, nullptr,               "UnloadCCR"},
+    {0x00030042, UnloadCRR,             "UnloadCRR"},
     {0x000402C2, LoadCRO<false>,        "LoadCRO"},
     {0x000500C2, UnloadCRO,             "UnloadCRO"},
     {0x00060042, LinkCRO,               "LinkCRO"},
