@@ -726,6 +726,7 @@ class CROHelper {
 
         CROHelper crs(loaded_crs);
         u32 offset_export_num = GetField(StaticAnonymousSymbolNum);
+        LOG_INFO(Service_LDR, "CRO \"%s\" exports %d static anonymous symbols", ModuleName().data(), offset_export_num);
         for (u32 i = 0; i < offset_export_num; ++i) {
             StaticAnonymousSymbolEntry entry;
             GetEntry<StaticAnonymousSymbolTableOffset>(i, entry);
@@ -1000,8 +1001,8 @@ class CROHelper {
 
             ResultCode result = ForEachAutoLinkCRO([&](CROHelper source) -> ResultVal<bool> {
                 if (want_cro_name == source.ModuleName()) {
-                    LOG_DEBUG(Service_LDR, "CRO \"%s\" imports indexed symbols from \"%s\"",
-                        ModuleName().data(), source.ModuleName().data());
+                    LOG_INFO(Service_LDR, "CRO \"%s\" imports %d indexed symbols from \"%s\"",
+                        ModuleName().data(), entry.import_indexed_symbol_num, source.ModuleName().data());
                     for (u32 j = 0; j < entry.import_indexed_symbol_num; ++j) {
                         ImportIndexedSymbolEntry im;
                         entry.GetImportIndexedSymbolEntry(j, im);
@@ -1015,8 +1016,8 @@ class CROHelper {
                             return result;
                         }
                     }
-                    LOG_DEBUG(Service_LDR, "CRO \"%s\" imports anonymous symbols from \"%s\"",
-                        ModuleName().data(), source.ModuleName().data());
+                    LOG_INFO(Service_LDR, "CRO \"%s\" imports %d anonymous symbols from \"%s\"",
+                        ModuleName().data(), entry.import_anonymous_symbol_num, source.ModuleName().data());
                     for (u32 j = 0; j < entry.import_anonymous_symbol_num; ++j) {
                         ImportAnonymousSymbolEntry im;
                         entry.GetImportAnonymousSymbolEntry(j, im);
@@ -1110,8 +1111,8 @@ class CROHelper {
             if (Memory::GetString(entry.name_offset, target_import_string_size) != module_name)
                 continue;
 
-            LOG_DEBUG(Service_LDR, "CRO \"%s\" exports indexed symbols to \"%s\"",
-                module_name.data(), target.ModuleName().data());
+            LOG_INFO(Service_LDR, "CRO \"%s\" exports %d indexed symbols to \"%s\"",
+                module_name.data(), entry.import_indexed_symbol_num, target.ModuleName().data());
             for (u32 j = 0; j < entry.import_indexed_symbol_num; ++j) {
                 ImportIndexedSymbolEntry im;
                 entry.GetImportIndexedSymbolEntry(j, im);
@@ -1126,8 +1127,8 @@ class CROHelper {
                 }
             }
 
-            LOG_DEBUG(Service_LDR, "CRO \"%s\" exports anonymous symbols to \"%s\"",
-                module_name.data(), target.ModuleName().data());
+            LOG_INFO(Service_LDR, "CRO \"%s\" exports %d anonymous symbols to \"%s\"",
+                module_name.data(), entry.import_anonymous_symbol_num, target.ModuleName().data());
             for (u32 j = 0; j < entry.import_anonymous_symbol_num; ++j) {
                 ImportAnonymousSymbolEntry im;
                 entry.GetImportAnonymousSymbolEntry(j, im);
