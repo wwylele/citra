@@ -114,9 +114,20 @@ class CROHelper {
     };
     static_assert(sizeof(ImportModuleEntry) == 20, "ImportModuleEntry has wrong size");
 
+    enum class PatchType : u8 {
+        Nothing = 0,
+        AbsoluteAddress = 2,
+        RelativeAddress = 3,
+        ThumbBranch = 10,
+        ArmBranch = 28,
+        ModifyArmBranch = 29,
+        AbsoluteAddress2 = 38,
+        AlignedRelativeAddress = 42,
+    };
+
     struct PatchEntry { // for ExternalPatchTable and StaticPatchTable
         u32 target_segment_tag; // to self's segment in ExternalPatchTable. to static module segment in StaticPatchTable?
-        u8 type;
+        PatchType type;
         u8 is_batch_end;
         u8 batch_resolved; // set at batch begin
         u8 unk3;
@@ -126,7 +137,7 @@ class CROHelper {
 
     struct InternalPatchEntry {
         u32 target_segment_tag;
-        u8 type;
+        PatchType type;
         u8 value_segment_index;
         u8 unk2;
         u8 unk3;
@@ -629,15 +640,23 @@ class CROHelper {
      *        Usually equals to target_address, but will be different for a target in .data segment
      * @returns ResultCode indicating the result of the operation, 0 on success
      */
-    ResultCode ApplyPatch(VAddr target_address, u8 patch_type, u32 shift, u32 symbol_address, u32 target_future_address) {
+    ResultCode ApplyPatch(VAddr target_address, PatchType patch_type, u32 shift, u32 symbol_address, u32 target_future_address) {
         switch (patch_type) {
-            case 2:
+            case PatchType::Nothing:
+                break;
+            case PatchType::AbsoluteAddress:
+            case PatchType::AbsoluteAddress2:
                 Memory::Write32(target_address, symbol_address + shift); // writes an obsolute address value
                 break;
-            case 3:
+            case PatchType::RelativeAddress:
                 Memory::Write32(target_address, symbol_address + shift - target_future_address); // writes an relative address value
                 break;
-            // TODO implement more types
+            case PatchType::ThumbBranch:
+            case PatchType::ArmBranch:
+            case PatchType::ModifyArmBranch:
+            case PatchType::AlignedRelativeAddress:
+                UNIMPLEMENTED();
+                break;
             default:
                 return CROFormatError(0x23);
         }
