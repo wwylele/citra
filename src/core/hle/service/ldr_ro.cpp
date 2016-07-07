@@ -646,10 +646,10 @@ class CROHelper {
                 break;
             case PatchType::AbsoluteAddress:
             case PatchType::AbsoluteAddress2:
-                Memory::Write32(target_address, symbol_address + shift); // writes an obsolute address value
+                Memory::Write32(target_address, symbol_address + shift);
                 break;
             case PatchType::RelativeAddress:
-                Memory::Write32(target_address, symbol_address + shift - target_future_address); // writes an relative address value
+                Memory::Write32(target_address, symbol_address + shift - target_future_address);
                 break;
             case PatchType::ThumbBranch:
             case PatchType::ArmBranch:
@@ -658,7 +658,34 @@ class CROHelper {
                 UNIMPLEMENTED();
                 break;
             default:
-                return CROFormatError(0x23);
+                return CROFormatError(0x22);
+        }
+        return RESULT_SUCCESS;
+    }
+
+    /**
+     * Clears a patch to zero
+     * @param target_address where to apply the patch
+     * @param patch_type the type of the patch
+     * @returns ResultCode indicating the result of the operation, 0 on success
+     */
+    ResultCode ClearPatch(VAddr target_address, PatchType patch_type) {
+        switch (patch_type) {
+            case PatchType::Nothing:
+                break;
+            case PatchType::AbsoluteAddress:
+            case PatchType::AbsoluteAddress2:
+            case PatchType::RelativeAddress:
+                Memory::Write32(target_address, 0);
+                break;
+            case PatchType::ThumbBranch:
+            case PatchType::ArmBranch:
+            case PatchType::ModifyArmBranch:
+            case PatchType::AlignedRelativeAddress:
+                UNIMPLEMENTED();
+                break;
+            default:
+                return CROFormatError(0x22);
         }
         return RESULT_SUCCESS;
     }
@@ -685,6 +712,35 @@ class CROHelper {
             ResultCode result = ApplyPatch(patch_target, patch.type, patch.shift, unresolved_symbol, patch_target);
             if (result.IsError()) {
                 LOG_ERROR(Service_LDR, "Error applying patch %08X", result.raw);
+                return result;
+            }
+
+            if (batch_begin) {
+                patch.batch_resolved = 0; // reset to unresolved state
+                SetEntry<ExternalPatchTableOffset>(i, patch);
+            }
+
+            batch_begin = patch.is_batch_end != 0; // current is end, next is begin
+        }
+
+        return RESULT_SUCCESS;
+    }
+
+    /// Clears all external patches to zero.
+    ResultCode ClearAllExternalPatches() {
+        u32 external_patch_num = GetField(ExternalPatchNum);
+        PatchEntry patch;
+
+        bool batch_begin = true;
+        for (u32 i = 0; i < external_patch_num; ++i) {
+            GetEntry<ExternalPatchTableOffset>(i, patch);
+            VAddr patch_target = SegmentTagToAddress(patch.target_segment_tag);
+            if (patch_target == 0) {
+                return CROFormatError(0x12);
+            }
+            ResultCode result = ClearPatch(patch_target, patch.type);
+            if (result.IsError()) {
+                LOG_ERROR(Service_LDR, "Error clearing patch %08X", result.raw);
                 return result;
             }
 
@@ -801,6 +857,26 @@ class CROHelper {
             ResultCode result = ApplyPatch(target_address, patch.type, patch.shift, value_segment.offset, target_addressB);
             if (result.IsError()) {
                 LOG_ERROR(Service_LDR, "Error applying patch %08X", result.raw);
+                return result;
+            }
+        }
+        return RESULT_SUCCESS;
+    }
+
+    /// Clears all internal patches to zero.
+    ResultCode ClearInternalPatches() {
+        u32 internal_patch_num = GetField(InternalPatchNum);
+        for (u32 i = 0; i < internal_patch_num; ++i) {
+            InternalPatchEntry patch;
+            GetEntry<InternalPatchTableOffset>(i, patch);
+            VAddr target_address = SegmentTagToAddress(patch.target_segment_tag);
+            if (target_address == 0) {
+                return CROFormatError(0x15);
+            }
+
+            ResultCode result = ClearPatch(target_address, patch.type);
+            if (result.IsError()) {
+                LOG_ERROR(Service_LDR, "Error clearing patch %08X", result.raw);
                 return result;
             }
         }
@@ -1504,6 +1580,21 @@ public:
         return RESULT_SUCCESS;
     }
 
+    ResultCode ClearPatches() {
+        ResultCode result = ClearAllExternalPatches();
+        if (result.IsError()) {
+            LOG_ERROR(Service_LDR, "Error clearing external patches %08X", result.raw);
+            return result;
+        }
+
+        result = ClearInternalPatches();
+        if (result.IsError()) {
+            LOG_ERROR(Service_LDR, "Error clearing internal patches %08X", result.raw);
+            return result;
+        }
+        return RESULT_SUCCESS;
+    }
+
     void RegisterCRS() {
         SetNext(0);
         SetPrevious(0);
@@ -1634,6 +1725,10 @@ public:
 
         return true;
     }
+
+    bool IsFixed() {
+        return GetField(Magic) == MAGIC_FIXD;
+    }
 };
 
 const std::array<int, 17> CROHelper::ENTRY_SIZE {{
@@ -1679,20 +1774,31 @@ public:
         memory_blocks.clear();
     }
 
-    void AddMemoryBlock(VAddr source, VAddr dest, u32 size) {
-        memory_blocks[source] = std::make_tuple(dest, size);
+    void AddMemoryBlock(VAddr mapping, VAddr original, u32 size) {
+        memory_blocks[mapping] = std::make_tuple(original, size);
     }
 
     void RemoveMemoryBlock(VAddr source) {
         memory_blocks.erase(source);
     }
 
-    void SynchronizeMemory() {
+    void SynchronizeOriginalMemory() {
         for (auto block : memory_blocks) {
-            VAddr source, dest;
+            VAddr mapping, original;
             u32 size;
-            std::tie(dest, size) = block.second;
-            Memory::CopyBlock(dest, block.first, size);
+            mapping = block.first;
+            std::tie(original, size) = block.second;
+            Memory::CopyBlock(original, mapping, size);
+        }
+    }
+
+    void SynchronizeMappingMemory() {
+        for (auto block : memory_blocks) {
+            VAddr mapping, original;
+            u32 size;
+            mapping = block.first;
+            std::tie(original, size) = block.second;
+            Memory::CopyBlock(mapping, original, size);
         }
     }
 };
@@ -1784,7 +1890,7 @@ static void Initialize(Service::Interface* self) {
         return;
     }
 
-    memory_synchronizer.SynchronizeMemory();
+    memory_synchronizer.SynchronizeOriginalMemory();
 
     loaded_crs = crs_address;
 
@@ -1884,6 +1990,8 @@ static void LoadCRO(Service::Interface* self) {
         auto_link ? "true" : "false", fix_level, crr_address
         );
 
+    memory_synchronizer.SynchronizeMappingMemory();
+
     cmd_buff[0] = IPC::MakeHeader(link_on_load_bug_fix ? 9 : 4, 2, 0);
 
     if (!loaded_crs) {
@@ -1973,7 +2081,7 @@ static void LoadCRO(Service::Interface* self) {
 
     u32 fix_size = cro.Fix(fix_level);
 
-    memory_synchronizer.SynchronizeMemory();
+    memory_synchronizer.SynchronizeOriginalMemory();
 
     if (fix_size != cro_size) {
         std::shared_ptr<std::vector<u8>> fixed_cro_mem = std::make_shared<std::vector<u8>>(
@@ -2020,6 +2128,8 @@ static void UnloadCRO(Service::Interface* self) {
 
     LOG_WARNING(Service_LDR, "Unloading CRO \"%s\" at 0x%08X", cro.ModuleName().data(), cro_address);
 
+    memory_synchronizer.SynchronizeMappingMemory();
+
     cmd_buff[0] = IPC::MakeHeader(5, 1, 0);
 
     if (!loaded_crs) {
@@ -2044,6 +2154,12 @@ static void UnloadCRO(Service::Interface* self) {
 
     u32 fixed_size = cro.GetFixedSize();
 
+    // Note that if the CRO iss not fixed (loaded with fix_level = 0),
+    // games will modify the .data section entry, making it pointing to the data in CRO buffer
+    // instead of the .data buffer, before calling UnloadCRO. In this case,
+    // any modification to the .data section (Unlink and ClearPatches) below.
+    // will actually do in CRO buffer.
+
     cro.Unregister();
 
     ResultCode result = cro.Unlink();
@@ -2054,11 +2170,20 @@ static void UnloadCRO(Service::Interface* self) {
         return;
     }
 
-    // TODO if not fixed, clear all external/internal patches to restore the state before loading
+    // if the module is not fixed, clears all external/internal patches
+    // to restore the state before loading, so that it can be loaded again(?)
+    if (!cro.IsFixed()) {
+        result = cro.ClearPatches();
+        if (result.IsError()) {
+            LOG_ERROR(Service_LDR, "Error clearing patches %08X", result.raw);
+            cmd_buff[1] = result.raw;
+            return;
+        }
+    }
 
     cro.Unrebase();
 
-    memory_synchronizer.SynchronizeMemory();
+    memory_synchronizer.SynchronizeOriginalMemory();
 
     result = Kernel::g_current_process->vm_manager.UnmapRange(cro_address, fixed_size);
     if (result.IsError()) {
@@ -2088,6 +2213,8 @@ static void LinkCRO(Service::Interface* self) {
     CROHelper cro(cro_address);
     LOG_WARNING(Service_LDR, "Linking CRO \"%s\"", cro.ModuleName().data());
 
+    memory_synchronizer.SynchronizeMappingMemory();
+
     cmd_buff[0] = IPC::MakeHeader(6, 1, 0);
 
     if (!loaded_crs) {
@@ -2113,7 +2240,7 @@ static void LinkCRO(Service::Interface* self) {
         LOG_ERROR(Service_LDR, "Error linking CRO %08X", result.raw);
     }
 
-    memory_synchronizer.SynchronizeMemory();
+    memory_synchronizer.SynchronizeOriginalMemory();
     Core::g_app_core->ClearInstructionCache();
 
     cmd_buff[1] = result.raw;
@@ -2135,6 +2262,8 @@ static void UnlinkCRO(Service::Interface* self) {
 
     CROHelper cro(cro_address);
     LOG_WARNING(Service_LDR, "Unlinking CRO \"%s\"", cro.ModuleName().data());
+
+    memory_synchronizer.SynchronizeMappingMemory();
 
     cmd_buff[0] = IPC::MakeHeader(7, 1, 0);
 
@@ -2161,7 +2290,7 @@ static void UnlinkCRO(Service::Interface* self) {
         LOG_ERROR(Service_LDR, "Error unlinking CRO %08X", result.raw);
     }
 
-    memory_synchronizer.SynchronizeMemory();
+    memory_synchronizer.SynchronizeOriginalMemory();
     Core::g_app_core->ClearInstructionCache();
 
     cmd_buff[1] = result.raw;
@@ -2182,6 +2311,8 @@ static void Shutdown(Service::Interface* self) {
 
     LOG_WARNING(Service_LDR, "called, CRS buffer = 0x%08X", cmd_buff[1]);
 
+    memory_synchronizer.SynchronizeMappingMemory();
+
     if (!loaded_crs) {
         LOG_ERROR(Service_LDR, "Not initialized");
         cmd_buff[1] = ERROR_NOT_INITIALIZED.raw;
@@ -2193,7 +2324,7 @@ static void Shutdown(Service::Interface* self) {
     CROHelper crs(loaded_crs);
     crs.Unrebase(true);
 
-    memory_synchronizer.SynchronizeMemory();
+    memory_synchronizer.SynchronizeOriginalMemory();
 
     ResultCode result = Kernel::g_current_process->vm_manager.UnmapRange(loaded_crs, crs.GetFileSize());
     if (result.IsError()) {
