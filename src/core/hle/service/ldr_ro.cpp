@@ -57,7 +57,7 @@ static ResultCode CROFormatError(u32 description) {
     return ResultCode(static_cast<ErrorDescription>(description), ErrorModule::RO, ErrorSummary::WrongArgument, ErrorLevel::Permanent);
 }
 
-class CROHelper {
+class CROHelper final {
     const VAddr address; ///< the virtual address of this module
 
     enum HeaderField {
@@ -360,14 +360,14 @@ class CROHelper {
         if (!GetField(ExportTreeNum))
             return 0;
 
-        u32 len = name.size();
+        std::size_t len = name.size();
         ExportTreeEntry entry;
         GetEntry(0, entry);
         ExportTreeEntry::Child next;
         next.raw = entry.left.raw;
         u32 found_id;
 
-        while (1) {
+        while (true) {
             GetEntry(next.next_index, entry);
 
             if (next.is_end) {
@@ -447,8 +447,9 @@ class CROHelper {
             FileSize
         }};
 
-        u32 prev_offset = GetField(OFFSET_ORDER[0]), cur_offset;
-        for (int i = 1; i < OFFSET_ORDER.size(); ++i) {
+        u32 prev_offset = GetField(OFFSET_ORDER[0]);
+        u32 cur_offset;
+        for (std::size_t i = 1; i < OFFSET_ORDER.size(); ++i) {
             cur_offset = GetField(OFFSET_ORDER[i]);
             if (cur_offset < prev_offset)
                 return error;
@@ -554,7 +555,7 @@ class CROHelper {
     /// Verifies indeces in export tree table
     ResultCode VerifyExportTreeTable() {
         u32 tree_num = GetField(ExportTreeNum);
-        for (u32 i =0; i < tree_num; ++i) {
+        for (u32 i = 0; i < tree_num; ++i) {
             ExportTreeEntry entry;
             GetEntry(i, entry);
 
@@ -1410,7 +1411,7 @@ class CROHelper {
     }
 
 public:
-    CROHelper(VAddr cro_address) : address(cro_address) {
+    explicit CROHelper(VAddr cro_address) : address(cro_address) {
     }
 
     std::string ModuleName() {
@@ -1776,7 +1777,7 @@ public:
     }
 
     /// Gets the end of reserved data according to the fix level
-    u32 GetFixEnd(int fix_level) {
+    u32 GetFixEnd(u32 fix_level) {
         u32 end = CRO_HEADER_SIZE;
         end = std::max<u32>(end, GetField(CodeOffset) + GetField(CodeSize));
 
@@ -1796,7 +1797,7 @@ public:
     }
 
     /// Zeros offsets to cropped data according to the fix level and marks as fixed
-    u32 Fix(int fix_level) {
+    u32 Fix(u32 fix_level) {
         u32 fix_end = GetFixEnd(fix_level);
 
         if (fix_level != 0) {
@@ -1899,9 +1900,9 @@ public:
 
     void SynchronizeOriginalMemory() {
         for (auto block : memory_blocks) {
-            VAddr mapping, original;
+            VAddr mapping = block.first;
+            VAddr original;
             u32 size;
-            mapping = block.first;
             std::tie(original, size) = block.second;
             Memory::CopyBlock(original, mapping, size);
         }
@@ -1909,9 +1910,9 @@ public:
 
     void SynchronizeMappingMemory() {
         for (auto block : memory_blocks) {
-            VAddr mapping, original;
+            VAddr mapping = block.first;
+            VAddr original;
             u32 size;
-            mapping = block.first;
             std::tie(original, size) = block.second;
             Memory::CopyBlock(mapping, original, size);
         }
@@ -1922,6 +1923,14 @@ static MemorySynchronizer memory_synchronizer;
 
 // TODO(wwylele): this should be in the per-client storage when we implement multi-process
 static VAddr loaded_crs; ///< the virtual address of the static module
+
+static bool VerifyBufferState(VAddr buffer_ptr, u32 size) {
+    auto vma = Kernel::g_current_process->vm_manager.FindVMA(buffer_ptr);
+    return vma != Kernel::g_current_process->vm_manager.vma_map.end()
+        && vma->second.base + vma->second.size >= buffer_ptr + size
+        && vma->second.permissions == Kernel::VMAPermission::ReadWrite
+        && vma->second.meminfo_state == Kernel::MemoryState::Private;
+}
 
 /**
  * LDR_RO::Initialize service function
@@ -1985,11 +1994,7 @@ static void Initialize(Service::Interface* self) {
         return;
     }
 
-    auto vma = Kernel::g_current_process->vm_manager.FindVMA(crs_buffer_ptr);
-    if (vma == Kernel::g_current_process->vm_manager.vma_map.end()
-        || vma->second.base + vma->second.size < crs_buffer_ptr + crs_size
-        || vma->second.permissions != Kernel::VMAPermission::ReadWrite
-        || vma->second.meminfo_state != Kernel::MemoryState::Private) {
+    if (!VerifyBufferState(crs_buffer_ptr, crs_size)) {
         LOG_ERROR(Service_LDR, "CRS original buffer is in invalid state");
         cmd_buff[1] = ERROR_INVALID_MEMORY_STATE.raw;
         return;
@@ -2190,11 +2195,7 @@ static void LoadCRO(Service::Interface* self) {
         return;
     }
 
-    auto vma = Kernel::g_current_process->vm_manager.FindVMA(cro_buffer_ptr);
-    if (vma == Kernel::g_current_process->vm_manager.vma_map.end()
-        || vma->second.base + vma->second.size < cro_buffer_ptr + cro_size
-        || vma->second.permissions != Kernel::VMAPermission::ReadWrite
-        || vma->second.meminfo_state != Kernel::MemoryState::Private) {
+    if (!VerifyBufferState(cro_buffer_ptr, cro_size)) {
         LOG_ERROR(Service_LDR, "CRO original buffer is in invalid state");
         cmd_buff[1] = ERROR_INVALID_MEMORY_STATE.raw;
         return;
