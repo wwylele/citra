@@ -261,11 +261,11 @@ class CROHelper final {
     static constexpr u32 MAGIC_CRO0 = 0x304F5243;
     static constexpr u32 MAGIC_FIXD = 0x44584946;
 
-    VAddr Field(HeaderField field) {
+    VAddr Field(HeaderField field) const {
         return address + CRO_HASH_SIZE + field * 4;
     }
 
-    u32 GetField(HeaderField field) {
+    u32 GetField(HeaderField field) const {
         return Memory::Read32(Field(field));
     }
 
@@ -273,11 +273,11 @@ class CROHelper final {
         Memory::Write32(Field(field), value);
     }
 
-    VAddr Next() {
+    VAddr Next() const {
         return GetField(NextCRO);
     }
 
-    VAddr Previous() {
+    VAddr Previous() const {
         return GetField(PreviousCRO);
     }
 
@@ -319,7 +319,7 @@ class CROHelper final {
      *       indicating which table the entry is in.
      */
     template <typename T>
-    void GetEntry(int index, T& data) {
+    void GetEntry(std::size_t index, T& data) const {
         Memory::ReadBlock(GetField(T::TABLE_OFFSET_FIELD) + index * sizeof(T), &data, sizeof(T));
     }
 
@@ -331,12 +331,12 @@ class CROHelper final {
      *       indicating which table the entry is in.
      */
     template <typename T>
-    void SetEntry(int index, const T& data) {
+    void SetEntry(std::size_t index, const T& data) {
         Memory::WriteBlock(GetField(T::TABLE_OFFSET_FIELD) + index * sizeof(T), &data, sizeof(T));
     }
 
     /// Converts a segment tag to virtual address in this module. Returns 0 if invalid.
-    VAddr SegmentTagToAddress(SegmentTag segment_tag) {
+    VAddr SegmentTagToAddress(SegmentTag segment_tag) const {
         u32 segment_num = GetField(SegmentNum);
 
         if (segment_tag.segment_index >= segment_num)
@@ -356,7 +356,7 @@ class CROHelper final {
      * @param name the name of the symbol to find
      * @return VAddr the virtual address of the symbol. 0 if not found.
      */
-    VAddr FindExportNamedSymbol(const std::string& name) {
+    VAddr FindExportNamedSymbol(const std::string& name) const {
         if (!GetField(ExportTreeNum))
             return 0;
 
@@ -553,7 +553,7 @@ class CROHelper final {
     }
 
     /// Verifies indeces in export tree table
-    ResultCode VerifyExportTreeTable() {
+    ResultCode VerifyExportTreeTable() const {
         u32 tree_num = GetField(ExportTreeNum);
         for (u32 i = 0; i < tree_num; ++i) {
             ExportTreeEntry entry;
@@ -1414,15 +1414,15 @@ public:
     explicit CROHelper(VAddr cro_address) : address(cro_address) {
     }
 
-    std::string ModuleName() {
+    std::string ModuleName() const {
         return Memory::GetString(GetField(ModuleNameOffset), GetField(ModuleNameSize));
     }
 
-    u32 GetFileSize() {
+    u32 GetFileSize() const {
         return GetField(FileSize);
     }
 
-    u32 GetFixedSize() {
+    u32 GetFixedSize() const {
         return GetField(FixedSize);
     }
 
@@ -1554,7 +1554,7 @@ public:
     }
 
     /// Verifies module hash by CRR
-    ResultCode VerifyHash(u32 cro_size, VAddr crr) {
+    ResultCode VerifyHash(u32 cro_size, VAddr crr) const {
         // TODO(wwylele): actually verify the hash
         return RESULT_SUCCESS;
     }
@@ -1777,7 +1777,7 @@ public:
     }
 
     /// Gets the end of reserved data according to the fix level
-    u32 GetFixEnd(u32 fix_level) {
+    u32 GetFixEnd(u32 fix_level) const {
         u32 end = CRO_HEADER_SIZE;
         end = std::max<u32>(end, GetField(CodeOffset) + GetField(CodeSize));
 
@@ -1816,7 +1816,7 @@ public:
         return fixed_size;
     }
 
-    bool IsLoaded() {
+    bool IsLoaded() const {
         u32 magic = GetField(Magic);
         if (magic != MAGIC_CRO0 && magic != MAGIC_FIXD)
             return false;
@@ -1826,7 +1826,7 @@ public:
         return true;
     }
 
-    bool IsFixed() {
+    bool IsFixed() const {
         return GetField(Magic) == MAGIC_FIXD;
     }
 
@@ -1834,7 +1834,7 @@ public:
      * Gets the page address of the code segment.
      * @returns a tuple of (address, size); (0, 0) if the code segment doesn't exist.
      */
-    std::tuple<VAddr, u32> GetExecutablePages() {
+    std::tuple<VAddr, u32> GetExecutablePages() const {
         u32 segment_num = GetField(SegmentNum);
         for (u32 i = 0; i < segment_num; ++i) {
             SegmentEntry entry;
