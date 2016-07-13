@@ -335,7 +335,11 @@ class CROHelper final {
         Memory::WriteBlock(GetField(T::TABLE_OFFSET_FIELD) + index * sizeof(T), &data, sizeof(T));
     }
 
-    /// Converts a segment tag to virtual address in this module. Returns 0 if invalid.
+    /**
+     * Converts a segment tag to virtual address in this module.
+     * @param segment_tag the segment tag to convert
+     * @returns VAddr the virtual address the segment tag points to; 0 if invalid.
+     */
     VAddr SegmentTagToAddress(SegmentTag segment_tag) const {
         u32 segment_num = GetField(SegmentNum);
 
@@ -402,7 +406,11 @@ class CROHelper final {
         return SegmentTagToAddress(symbol_entry.symbol_position);
     }
 
-    /// Rebases offsets in module header according to module address
+    /**
+     * Rebases offsets in module header according to module address.
+     * @param cro_size the size of the CRO file
+     * @returns ResultCode RESULT_SUCCESS if all offsets are verified to be valid, otherwise error code.
+     */
     ResultCode RebaseHeader(u32 cro_size) {
         ResultCode error = CROFormatError(0x11);
 
@@ -480,7 +488,12 @@ class CROHelper final {
         return RESULT_SUCCESS;
     }
 
-    /// Verify a string to be terminated by 0
+    /**
+     * Verify a string to be terminated by 0
+     * @param address the virtual address of the string
+     * @param size the size of the string, including the terminating 0
+     * @returns ResultCode RESULT_SUCCESS if the string is terminated by 0, otherwise error code.
+     */
     static ResultCode VerifyString(VAddr address, u32 size) {
         if (size) {
             if (Memory::Read8(address + size - 1) != 0)
@@ -529,7 +542,10 @@ class CROHelper final {
         return MakeResult<u32>(prev_data_segment);
     }
 
-    /// Rebases offsets in exported named symbol table according to module address
+    /**
+     * Rebases offsets in exported named symbol table according to module address.
+     * @returns ResultCode RESULT_SUCCESS if all offsets are verified to be valid, otherwise error code.
+     */
     ResultCode RebaseExportNamedSymbolTable() {
         VAddr export_strings_offset = GetField(ExportStringsOffset);
         VAddr export_strings_end = export_strings_offset + GetField(ExportStringsSize);
@@ -552,7 +568,10 @@ class CROHelper final {
         return RESULT_SUCCESS;
     }
 
-    /// Verifies indeces in export tree table
+    /**
+     * Verifies indeces in export tree table.
+     * @returns ResultCode RESULT_SUCCESS if all indeces are verified to be valid, otherwise error code.
+     */
     ResultCode VerifyExportTreeTable() const {
         u32 tree_num = GetField(ExportTreeNum);
         for (u32 i = 0; i < tree_num; ++i) {
@@ -566,7 +585,10 @@ class CROHelper final {
         return RESULT_SUCCESS;
     }
 
-    /// Rebases offsets in exported module table according to module address
+    /**
+     * Rebases offsets in exported module table according to module address.
+     * @returns ResultCode RESULT_SUCCESS if all offsets are verified to be valid, otherwise error code.
+     */
     ResultCode RebaseImportModuleTable() {
         VAddr import_strings_offset = GetField(ImportStringsOffset);
         VAddr import_strings_end = import_strings_offset + GetField(ImportStringsSize);
@@ -609,7 +631,10 @@ class CROHelper final {
         return RESULT_SUCCESS;
     }
 
-    /// Rebases offsets in imported named symbol table according to module address
+    /**
+     * Rebases offsets in imported named symbol table according to module address.
+     * @returns ResultCode RESULT_SUCCESS if all offsets are verified to be valid, otherwise error code.
+     */
     ResultCode RebaseImportNamedSymbolTable() {
         VAddr import_strings_offset = GetField(ImportStringsOffset);
         VAddr import_strings_end = import_strings_offset + GetField(ImportStringsSize);
@@ -642,7 +667,10 @@ class CROHelper final {
         return RESULT_SUCCESS;
     }
 
-    /// Rebases offsets in imported indexed symbol table according to module address
+    /**
+     * Rebases offsets in imported indexed symbol table according to module address.
+     * @returns ResultCode RESULT_SUCCESS if all offsets are verified to be valid, otherwise error code.
+     */
     ResultCode RebaseImportIndexedSymbolTable() {
         VAddr external_patch_table_offset = GetField(ExternalPatchTableOffset);
         VAddr external_patch_table_end = external_patch_table_offset + GetField(ExternalPatchNum) * sizeof(ExternalPatchEntry);
@@ -665,7 +693,10 @@ class CROHelper final {
         return RESULT_SUCCESS;
     }
 
-    /// Rebases offsets in imported anonymous symbol table according to module address
+    /**
+     * Rebases offsets in imported anonymous symbol table according to module address.
+     * @returns ResultCode RESULT_SUCCESS if all offsets are verified to be valid, otherwise error code.
+     */
     ResultCode RebaseImportAnonymousSymbolTable() {
         VAddr external_patch_table_offset = GetField(ExternalPatchTableOffset);
         VAddr external_patch_table_end = external_patch_table_offset + GetField(ExternalPatchNum) * sizeof(ExternalPatchEntry);
@@ -750,7 +781,10 @@ class CROHelper final {
         return RESULT_SUCCESS;
     }
 
-    /// Resets all external patches to unresolved state.
+    /**
+     * Resets all external patches to unresolved state.
+     * @returns ResultCode RESULT_SUCCESS if success, otherwise error code.
+     */
     ResultCode ResetExternalPatches() {
         u32 unresolved_symbol = SegmentTagToAddress(GetField(OnUnresolvedSegmentTag));
         u32 external_patch_num = GetField(ExternalPatchNum);
@@ -790,7 +824,10 @@ class CROHelper final {
         return RESULT_SUCCESS;
     }
 
-    /// Clears all external patches to zero.
+    /**
+     * Clears all external patches to zero.
+     * @returns ResultCode RESULT_SUCCESS if success, otherwise error code.
+     */
     ResultCode ClearExternalPatches() {
         u32 external_patch_num = GetField(ExternalPatchNum);
         ExternalPatchEntry patch;
@@ -863,7 +900,11 @@ class CROHelper final {
         return RESULT_SUCCESS;
     }
 
-    /// Applies all static anonymous symbol to the static module
+    /**
+     * Applies all static anonymous symbol to the static module.
+     * @param crs_address the virtual address of the static module
+     * @returns ResultCode RESULT_SUCCESS if success, otherwise error code.
+     */
     ResultCode ApplyStaticAnonymousSymbolToCRS(VAddr crs_address) {
         VAddr static_patch_table_offset = GetField(StaticPatchTableOffset);
         VAddr static_patch_table_end = static_patch_table_offset + GetField(StaticPatchNum) * sizeof(StaticPatchEntry);
@@ -892,7 +933,11 @@ class CROHelper final {
         return RESULT_SUCCESS;
     }
 
-    /// Applies all internal patches to the module itself
+    /**
+     * Applies all internal patches to the module itself.
+     * @param old_data_segment_address the virtual address of data segment in CRO buffer
+     * @returns ResultCode RESULT_SUCCESS if success, otherwise error code.
+     */
     ResultCode ApplyInternalPatches(u32 old_data_segment_address) {
         u32 segment_num = GetField(SegmentNum);
         u32 internal_patch_num = GetField(InternalPatchNum);
@@ -931,7 +976,10 @@ class CROHelper final {
         return RESULT_SUCCESS;
     }
 
-    /// Clears all internal patches to zero.
+    /**
+     * Clears all internal patches to zero.
+     * @returns ResultCode RESULT_SUCCESS if success, otherwise error code.
+     */
     ResultCode ClearInternalPatches() {
         u32 internal_patch_num = GetField(InternalPatchNum);
         for (u32 i = 0; i < internal_patch_num; ++i) {
@@ -1070,7 +1118,11 @@ class CROHelper final {
         }
     }
 
-    /// Looks up all imported named symbols of this module in all registered auto-link modules, and resolves them if found
+    /**
+     * Looks up all imported named symbols of this module in all registered auto-link modules, and resolves them if found.
+     * @param crs_address the virtual address of the static module
+     * @returns ResultCode RESULT_SUCCESS if success, otherwise error code.
+     */
     ResultCode ApplyImportNamedSymbol(VAddr crs_address) {
         u32 import_strings_size = GetField(ImportStringsSize);
         u32 symbol_import_num = GetField(ImportNamedSymbolNum);
@@ -1109,7 +1161,10 @@ class CROHelper final {
         return RESULT_SUCCESS;
     }
 
-    /// Resets all imported named symbols of this module to unresolved state
+    /**
+     * Resets all imported named symbols of this module to unresolved state.
+     * @returns ResultCode RESULT_SUCCESS if success, otherwise error code.
+     */
     ResultCode ResetImportNamedSymbol() {
         u32 unresolved_symbol = SegmentTagToAddress(GetField(OnUnresolvedSegmentTag));
 
@@ -1131,7 +1186,10 @@ class CROHelper final {
         return RESULT_SUCCESS;
     }
 
-    /// Resets all imported indexed symbols of this module to unresolved state
+    /**
+     * Resets all imported indexed symbols of this module to unresolved state.
+     * @returns ResultCode RESULT_SUCCESS if success, otherwise error code.
+     */
     ResultCode ResetImportIndexedSymbol() {
         u32 unresolved_symbol = SegmentTagToAddress(GetField(OnUnresolvedSegmentTag));
 
@@ -1152,7 +1210,10 @@ class CROHelper final {
         return RESULT_SUCCESS;
     }
 
-    /// Resets all imported anonymous symbols of this module to unresolved state
+    /**
+     * Resets all imported anonymous symbols of this module to unresolved state.
+     * @returns ResultCode RESULT_SUCCESS if success, otherwise error code.
+     */
     ResultCode ResetImportAnonymousSymbol() {
         u32 unresolved_symbol = SegmentTagToAddress(GetField(OnUnresolvedSegmentTag));
 
@@ -1173,7 +1234,11 @@ class CROHelper final {
         return RESULT_SUCCESS;
     }
 
-    /// Finds registered auto-link modules that this module imports, and resolves indexed and anonymous symbols exported by them
+    /**
+     * Finds registered auto-link modules that this module imports, and resolves indexed and anonymous symbols exported by them.
+     * @param crs_address the virtual address of the static module
+     * @returns ResultCode RESULT_SUCCESS if success, otherwise error code.
+     */
     ResultCode ApplyModuleImport(VAddr crs_address) {
         u32 import_strings_size = GetField(ImportStringsSize);
 
@@ -1224,7 +1289,11 @@ class CROHelper final {
         return RESULT_SUCCESS;
     }
 
-    /// Resolves target module's imported named symbols that exported by this module
+    /**
+     * Resolves target module's imported named symbols that exported by this module.
+     * @param target the module to resolve.
+     * @returns ResultCode RESULT_SUCCESS if success, otherwise error code.
+     */
     ResultCode ApplyExportNamedSymbol(CROHelper target) {
         LOG_DEBUG(Service_LDR, "CRO \"%s\" exports named symbols to \"%s\"",
             ModuleName().data(), target.ModuleName().data());
@@ -1253,7 +1322,11 @@ class CROHelper final {
         return RESULT_SUCCESS;
     }
 
-    /// Resetss target's named symbols imported from this module to unresolved state
+    /**
+     * Resets target's named symbols imported from this module to unresolved state.
+     * @param target the module to reset.
+     * @returns ResultCode RESULT_SUCCESS if success, otherwise error code.
+     */
     ResultCode ResetExportNamedSymbol(CROHelper target) {
         LOG_DEBUG(Service_LDR, "CRO \"%s\" unexports named symbols to \"%s\"",
             ModuleName().data(), target.ModuleName().data());
@@ -1283,7 +1356,11 @@ class CROHelper final {
         return RESULT_SUCCESS;
     }
 
-    /// Resolves imported indexed and anonymous symbols in the target module which imports this module
+    /**
+     * Resolves imported indexed and anonymous symbols in the target module which imports this module.
+     * @param target the module to resolve.
+     * @returns ResultCode RESULT_SUCCESS if success, otherwise error code.
+     */
     ResultCode ApplyModuleExport(CROHelper target) {
         std::string module_name = ModuleName();
         u32 target_import_string_size = target.GetField(ImportStringsSize);
@@ -1329,7 +1406,11 @@ class CROHelper final {
         return RESULT_SUCCESS;
     }
 
-    /// Resets target's indexed and anonymous symbol imported from this module to unresolved state
+    /**
+     * Resets target's indexed and anonymous symbol imported from this module to unresolved state.
+     * @param target the module to reset.
+     * @returns ResultCode RESULT_SUCCESS if success, otherwise error code.
+     */
     ResultCode ResetModuleExport(CROHelper target) {
         u32 unresolved_symbol = target.SegmentTagToAddress(target.GetField(OnUnresolvedSegmentTag));
 
@@ -1371,7 +1452,11 @@ class CROHelper final {
         return RESULT_SUCCESS;
     }
 
-    /// Resolves the exit function in this module
+    /**
+     * Resolves the exit function in this module
+     * @param crs_address the virtual address of the static module.
+     * @returns ResultCode RESULT_SUCCESS if success, otherwise error code.
+     */
     ResultCode ApplyExitPatches(VAddr crs_address) {
         u32 import_strings_size = GetField(ImportStringsSize);
         u32 symbol_import_num = GetField(ImportNamedSymbolNum);
@@ -1426,7 +1511,17 @@ public:
         return GetField(FixedSize);
     }
 
-    /// Rebases the module according to its address
+    /**
+     * Rebases the module according to its address.
+     * @param crs_address the virtual address of the static module
+     * @param cro_size the size of the CRO file
+     * @param data_segment_address buffer address for .data segment
+     * @param data_segment_size the buffer size for .data segment
+     * @param bss_segment_address the buffer address for .bss segment
+     * @param bss_segment_size the buffer size for .bss segment
+     * @param is_crs true if the module itself is the static module
+     * @returns ResultCode RESULT_SUCCESS if success, otherwise error code.
+     */
     ResultCode Rebase(VAddr crs_address, u32 cro_size,
         VAddr data_segment_addresss, u32 data_segment_size,
         VAddr bss_segment_address, u32 bss_segment_size, bool is_crs) {
@@ -1534,8 +1629,11 @@ public:
         return RESULT_SUCCESS;
     }
 
-    /// Unrebases the module
-    void Unrebase(bool is_crs = false) {
+    /**
+     * Unrebases the module.
+     * @param is_crs true if the module itself is the static module
+     */
+    void Unrebase(bool is_crs) {
         UnrebaseImportAnonymousSymbolTable();
         UnrebaseImportIndexedSymbolTable();
         UnrebaseImportNamedSymbolTable();
@@ -1553,13 +1651,23 @@ public:
         UnrebaseHeader();
     }
 
-    /// Verifies module hash by CRR
+    /**
+     * Verifies module hash by CRR.
+     * @param cro_size the size of the CRO
+     * @param crr the virtual address of the CRR
+     * @returns ResultCode RESULT_SUCCESS if success, otherwise error code.
+     */
     ResultCode VerifyHash(u32 cro_size, VAddr crr) const {
         // TODO(wwylele): actually verify the hash
         return RESULT_SUCCESS;
     }
 
-    /// Links this module with all registered auto-link module
+    /**
+     * Links this module with all registered auto-link module.
+     * @param crs_address the virtual address of the static module
+     * @param link_on_load_bug_fix true if link when loading and fix the bug
+     * @returns ResultCode RESULT_SUCCESS if success, otherwise error code.
+     */
     ResultCode Link(VAddr crs_address, bool link_on_load_bug_fix) {
         ResultCode result = RESULT_SUCCESS;
 
@@ -1633,7 +1741,11 @@ public:
         return RESULT_SUCCESS;
     }
 
-    /// Unlinks this module with other modules
+    /**
+     * Unlinks this module with other modules.
+     * @param crs_address the virtual address of the static module
+     * @returns ResultCode RESULT_SUCCESS if success, otherwise error code.
+     */
     ResultCode Unlink(VAddr crs_address) {
 
         // Resets all imported named symbols
@@ -1678,7 +1790,10 @@ public:
         return RESULT_SUCCESS;
     }
 
-    /// Clears all patches to zero
+    /**
+     * Clears all patches to zero.
+     * @returns ResultCode RESULT_SUCCESS if success, otherwise error code.
+     */
     ResultCode ClearPatches() {
         ResultCode result = ClearExternalPatches();
         if (result.IsError()) {
@@ -1699,7 +1814,11 @@ public:
         SetPrevious(0);
     }
 
-    /// Registers this module and adds to the module list
+    /**
+     * Registers this module and adds to the module list.
+     * @param crs_address the virtual address of the static module
+     * @auto_link whether to register as an auto link module
+     */
     void Register(VAddr crs_address, bool auto_link) {
         CROHelper crs(crs_address);
         CROHelper head(auto_link ? crs.Next() : crs.Previous());
@@ -1732,7 +1851,10 @@ public:
         SetNext(0);
     }
 
-    /// Unregisters this module and removes from the module list
+    /**
+     * Unregisters this module and removes from the module list.
+     * @param crs_address the virtual address of the static module
+     */
     void Unregister(VAddr crs_address) {
         CROHelper crs(crs_address);
         CROHelper nhead(crs.Next()), phead(crs.Previous());
@@ -1776,7 +1898,11 @@ public:
         SetPrevious(0);
     }
 
-    /// Gets the end of reserved data according to the fix level
+    /**
+     * Gets the end of reserved data according to the fix level.
+     * @param fix_level fix level from 0 to 3
+     * @returns the end of reserved data.
+     */
     u32 GetFixEnd(u32 fix_level) const {
         u32 end = CRO_HEADER_SIZE;
         end = std::max<u32>(end, GetField(CodeOffset) + GetField(CodeSize));
@@ -1796,7 +1922,11 @@ public:
         }
     }
 
-    /// Zeros offsets to cropped data according to the fix level and marks as fixed
+    /**
+     * Zeros offsets to cropped data according to the fix level and marks as fixed.
+     * @param fix_level fix level from 0 to 3
+     * @returns page-aligned size of the module after fixing.
+     */
     u32 Fix(u32 fix_level) {
         u32 fix_end = GetFixEnd(fix_level);
 
@@ -2384,7 +2514,7 @@ static void UnloadCRO(Service::Interface* self) {
         }
     }
 
-    cro.Unrebase();
+    cro.Unrebase(false);
 
     memory_synchronizer.SynchronizeOriginalMemory();
 
