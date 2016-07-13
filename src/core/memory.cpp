@@ -281,7 +281,7 @@ u8* GetPointer(const VAddr vaddr) {
 }
 
 
-std::string GetString(VAddr vaddr, u32 max_length) {
+std::string GetString(VAddr vaddr, std::size_t max_length) {
     std::string string;
     string.reserve(max_length);
     for (u32 i = 0; i < max_length; ++i) {
