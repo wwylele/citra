@@ -1943,8 +1943,8 @@ static void Initialize(Service::Interface* self) {
     u32 descriptor    = cmd_buff[4];
     u32 process       = cmd_buff[5];
 
-    LOG_WARNING(Service_LDR, "called. loading CRS from 0x%08X to 0x%08X, size = 0x%X. Process = 0x%08X",
-                crs_buffer, crs_address, crs_size, process);
+    LOG_WARNING(Service_LDR, "called, crs_buffer=0x%08X, crs_address=0x%08X, size=0x%X, descriptor=0x%08X, process=0x%08X",
+                crs_buffer, crs_address, crs_size, descriptor, process);
 
     if (descriptor != 0) {
         LOG_ERROR(Service_LDR, "IPC handle descriptor failed validation (0x%X).", descriptor);
@@ -2068,8 +2068,8 @@ static void LoadCRR(Service::Interface* self) {
 
     cmd_buff[1] = RESULT_SUCCESS.raw; // No error
 
-    LOG_WARNING(Service_LDR, "(STUBBED) called. crr_buffer_ptr=0x%08X, crr_size=0x%08X, process=0x%08X",
-                crr_buffer_ptr, crr_size, process);
+    LOG_WARNING(Service_LDR, "(STUBBED) called, crr_buffer_ptr=0x%08X, crr_size=0x%08X, descriptor=0x%08X, process=0x%08X",
+                crr_buffer_ptr, crr_size, descriptor, process);
 }
 
 /**
@@ -2099,8 +2099,8 @@ static void UnloadCRR(Service::Interface* self) {
 
     cmd_buff[1] = RESULT_SUCCESS.raw; // No error
 
-    LOG_WARNING(Service_LDR, "(STUBBED) called. crr_buffer_ptr=0x%08X, process=0x%08X",
-                crr_buffer_ptr, process);
+    LOG_WARNING(Service_LDR, "(STUBBED) called, crr_buffer_ptr=0x%08X, descriptor=0x%08X, process=0x%08X",
+                crr_buffer_ptr, descriptor, process);
 }
 
 /**
@@ -2141,13 +2141,12 @@ static void LoadCRO(Service::Interface* self) {
     u32 descriptor             = cmd_buff[12];
     u32 process                = cmd_buff[13];
 
-    LOG_WARNING(Service_LDR, "called (%s), loading CRO from 0x%08X to 0x%08X, size = 0x%X, "
-        "data_segment = 0x%08X, data_size = 0x%X, bss_segment = 0x%08X, bss_size = 0x%X, "
-        "auto_link = %s, fix_level = %d, crr = 0x%08X. Process = 0x%08X",
-        link_on_load_bug_fix ? "new" : "old",
-        cro_buffer, cro_address, cro_size,
-        data_segment_address, data_segment_size, bss_segment_address, bss_segment_size,
-        auto_link ? "true" : "false", fix_level, crr_address, process
+    LOG_DEBUG(Service_LDR, "called (%s), cro_buffer=0x%08X, cro_address=0x%08X, size=0x%X, "
+        "data_segment_address=0x%08X, zero=%d, data_segment_size=0x%X, bss_segment_address=0x%08X, bss_segment_size=0x%X, "
+        "auto_link=%s, fix_level=%d, crr_address=0x%08X, descriptor=0x%08X, process=0x%08X",
+        link_on_load_bug_fix ? "new" : "old", cro_buffer, cro_address, cro_size,
+        data_segment_address, zero, data_segment_size, bss_segment_address, bss_segment_size,
+        auto_link ? "true" : "false", fix_level, crr_address, descriptor, process
         );
 
     if (descriptor != 0) {
@@ -2293,7 +2292,7 @@ static void LoadCRO(Service::Interface* self) {
 
     Core::g_app_core->ClearInstructionCache();
 
-    LOG_INFO(Service_LDR, "CRO \"%s\" loaded at 0x%08X, fixed_end = 0x%08X",
+    LOG_INFO(Service_LDR, "CRO \"%s\" loaded at 0x%08X, fixed_end=0x%08X",
         cro.ModuleName().data(), cro_address, cro_address+fix_size);
 
     cmd_buff[1] = RESULT_SUCCESS.raw;
@@ -2320,6 +2319,9 @@ static void UnloadCRO(Service::Interface* self) {
     u32 descriptor         = cmd_buff[4];
     u32 process            = cmd_buff[5];
 
+    LOG_DEBUG(Service_LDR, "called, cro_address=0x%08X, zero=%d, original_buffer=0x%08X, descriptor=0x%08X, process=0x%08X",
+        cro_address, zero, original_buffer, descriptor, process);
+
     if (descriptor != 0) {
         LOG_ERROR(Service_LDR, "IPC handle descriptor failed validation (0x%X).", descriptor);
         cmd_buff[0] = IPC::MakeHeader(0, 1, 0);
@@ -2328,11 +2330,6 @@ static void UnloadCRO(Service::Interface* self) {
     }
 
     CROHelper cro(cro_address);
-
-    LOG_WARNING(Service_LDR, "Unloading CRO \"%s\" at 0x%08X, "
-        "zero = %d, original_buffer = 0x%08X, process = 0x%08X",
-        cro.ModuleName().data(), cro_address,
-        zero, original_buffer, process);
 
     memory_synchronizer.SynchronizeMappingMemory();
 
@@ -2355,6 +2352,8 @@ static void UnloadCRO(Service::Interface* self) {
         cmd_buff[1] = ERROR_NOT_LOADED.raw;
         return;
     }
+
+    LOG_INFO(Service_LDR, "Unloading CRO \"%s\"", cro.ModuleName().data());
 
     // Note that if the CRO is not fixed (loaded with fix_level = 0),
     // games will modify the .data section entry, making it pointing to the orignal data in CRO buffer
@@ -2415,6 +2414,9 @@ static void LinkCRO(Service::Interface* self) {
     u32 descriptor    = cmd_buff[2];
     u32 process       = cmd_buff[3];
 
+    LOG_DEBUG(Service_LDR, "called, cro_address=0x%08X, descriptor=0x%08X, process=0x%08X",
+        cro_address, descriptor, process);
+
     if (descriptor != 0) {
         LOG_ERROR(Service_LDR, "IPC handle descriptor failed validation (0x%X).", descriptor);
         cmd_buff[0] = IPC::MakeHeader(0, 1, 0);
@@ -2423,7 +2425,6 @@ static void LinkCRO(Service::Interface* self) {
     }
 
     CROHelper cro(cro_address);
-    LOG_WARNING(Service_LDR, "Linking CRO \"%s\". Process = 0x%08X", cro.ModuleName().data(), process);
 
     memory_synchronizer.SynchronizeMappingMemory();
 
@@ -2446,6 +2447,8 @@ static void LinkCRO(Service::Interface* self) {
         cmd_buff[1] = ERROR_NOT_LOADED.raw;
         return;
     }
+
+    LOG_INFO(Service_LDR, "Linking CRO \"%s\"", cro.ModuleName().data());
 
     ResultCode result = cro.Link(loaded_crs, false);
     if (result.IsError()) {
@@ -2474,6 +2477,9 @@ static void UnlinkCRO(Service::Interface* self) {
     u32 descriptor    = cmd_buff[2];
     u32 process       = cmd_buff[3];
 
+    LOG_DEBUG(Service_LDR, "called, cro_address=0x%08X, descriptor=0x%08X, process=0x%08X",
+        cro_address, descriptor, process);
+
     if (descriptor != 0) {
         LOG_ERROR(Service_LDR, "IPC handle descriptor failed validation (0x%X).", descriptor);
         cmd_buff[0] = IPC::MakeHeader(0, 1, 0);
@@ -2482,7 +2488,6 @@ static void UnlinkCRO(Service::Interface* self) {
     }
 
     CROHelper cro(cro_address);
-    LOG_WARNING(Service_LDR, "Unlinking CRO \"%s\". Process = 0x%08X", cro.ModuleName().data(), process);
 
     memory_synchronizer.SynchronizeMappingMemory();
 
@@ -2505,6 +2510,8 @@ static void UnlinkCRO(Service::Interface* self) {
         cmd_buff[1] = ERROR_NOT_LOADED.raw;
         return;
     }
+
+    LOG_INFO(Service_LDR, "Unlinking CRO \"%s\"", cro.ModuleName().data());
 
     ResultCode result = cro.Unlink(loaded_crs);
     if (result.IsError()) {
@@ -2533,7 +2540,8 @@ static void Shutdown(Service::Interface* self) {
     u32 descriptor   = cmd_buff[2];
     u32 process      = cmd_buff[3];
 
-    LOG_WARNING(Service_LDR, "called, CRS buffer = 0x%08X, process = 0x%08X", crs_buffer, process);
+    LOG_DEBUG(Service_LDR, "called, crs_buffer=0x%08X, descriptor=0x%08X, process=0x%08X",
+        crs_buffer, descriptor, process);
 
     if (descriptor != 0) {
         LOG_ERROR(Service_LDR, "IPC handle descriptor failed validation (0x%X).", descriptor);
