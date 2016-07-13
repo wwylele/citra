@@ -1937,14 +1937,14 @@ static VAddr loaded_crs; ///< the virtual address of the static module
  */
 static void Initialize(Service::Interface* self) {
     u32* cmd_buff = Kernel::GetCommandBuffer();
-    VAddr crs_buffer  = cmd_buff[1];
-    u32 crs_size      = cmd_buff[2];
-    VAddr crs_address = cmd_buff[3];
-    u32 descriptor    = cmd_buff[4];
-    u32 process       = cmd_buff[5];
+    VAddr crs_buffer_ptr = cmd_buff[1];
+    u32 crs_size         = cmd_buff[2];
+    VAddr crs_address    = cmd_buff[3];
+    u32 descriptor       = cmd_buff[4];
+    u32 process          = cmd_buff[5];
 
-    LOG_WARNING(Service_LDR, "called, crs_buffer=0x%08X, crs_address=0x%08X, size=0x%X, descriptor=0x%08X, process=0x%08X",
-                crs_buffer, crs_address, crs_size, descriptor, process);
+    LOG_WARNING(Service_LDR, "called, crs_buffer_ptr=0x%08X, crs_address=0x%08X, size=0x%X, descriptor=0x%08X, process=0x%08X",
+                crs_buffer_ptr, crs_address, crs_size, descriptor, process);
 
     if (descriptor != 0) {
         LOG_ERROR(Service_LDR, "IPC handle descriptor failed validation (0x%X).", descriptor);
@@ -1967,7 +1967,7 @@ static void Initialize(Service::Interface* self) {
         return;
     }
 
-    if (crs_buffer & 0xFFF) {
+    if (crs_buffer_ptr & 0xFFF) {
         LOG_ERROR(Service_LDR, "CRS original address is not aligned");
         cmd_buff[1] = ERROR_MISALIGNED_ADDRESS.raw;
         return;
@@ -1985,9 +1985,9 @@ static void Initialize(Service::Interface* self) {
         return;
     }
 
-    auto vma = Kernel::g_current_process->vm_manager.FindVMA(crs_buffer);
+    auto vma = Kernel::g_current_process->vm_manager.FindVMA(crs_buffer_ptr);
     if (vma == Kernel::g_current_process->vm_manager.vma_map.end()
-        || vma->second.base + vma->second.size < crs_buffer + crs_size
+        || vma->second.base + vma->second.size < crs_buffer_ptr + crs_size
         || vma->second.permissions != Kernel::VMAPermission::ReadWrite
         || vma->second.meminfo_state != Kernel::MemoryState::Private) {
         LOG_ERROR(Service_LDR, "CRS original buffer is in invalid state");
@@ -2005,7 +2005,7 @@ static void Initialize(Service::Interface* self) {
 
     // TODO(wwylele): should be memory aliasing
     std::shared_ptr<std::vector<u8>> crs_mem = std::make_shared<std::vector<u8>>(crs_size);
-    Memory::ReadBlock(crs_buffer, crs_mem->data(), crs_size);
+    Memory::ReadBlock(crs_buffer_ptr, crs_mem->data(), crs_size);
     result = Kernel::g_current_process->vm_manager.MapMemoryBlock(crs_address, crs_mem, 0, crs_size, Kernel::MemoryState::Code).Code();
     if (result.IsError()) {
         LOG_ERROR(Service_LDR, "Error mapping memory block %08X", result.raw);
@@ -2020,7 +2020,7 @@ static void Initialize(Service::Interface* self) {
         return;
     }
 
-    memory_synchronizer.AddMemoryBlock(crs_address, crs_buffer, crs_size);
+    memory_synchronizer.AddMemoryBlock(crs_address, crs_buffer_ptr, crs_size);
 
     CROHelper crs(crs_address);
     crs.InitCRS();
@@ -2127,7 +2127,7 @@ static void UnloadCRR(Service::Interface* self) {
 template <bool link_on_load_bug_fix>
 static void LoadCRO(Service::Interface* self) {
     u32* cmd_buff = Kernel::GetCommandBuffer();
-    VAddr cro_buffer           = cmd_buff[1];
+    VAddr cro_buffer_ptr       = cmd_buff[1];
     VAddr cro_address          = cmd_buff[2];
     u32 cro_size               = cmd_buff[3];
     VAddr data_segment_address = cmd_buff[4];
@@ -2141,10 +2141,10 @@ static void LoadCRO(Service::Interface* self) {
     u32 descriptor             = cmd_buff[12];
     u32 process                = cmd_buff[13];
 
-    LOG_DEBUG(Service_LDR, "called (%s), cro_buffer=0x%08X, cro_address=0x%08X, size=0x%X, "
+    LOG_DEBUG(Service_LDR, "called (%s), cro_buffer_ptr=0x%08X, cro_address=0x%08X, size=0x%X, "
         "data_segment_address=0x%08X, zero=%d, data_segment_size=0x%X, bss_segment_address=0x%08X, bss_segment_size=0x%X, "
         "auto_link=%s, fix_level=%d, crr_address=0x%08X, descriptor=0x%08X, process=0x%08X",
-        link_on_load_bug_fix ? "new" : "old", cro_buffer, cro_address, cro_size,
+        link_on_load_bug_fix ? "new" : "old", cro_buffer_ptr, cro_address, cro_size,
         data_segment_address, zero, data_segment_size, bss_segment_address, bss_segment_size,
         auto_link ? "true" : "false", fix_level, crr_address, descriptor, process
         );
@@ -2172,7 +2172,7 @@ static void LoadCRO(Service::Interface* self) {
         return;
     }
 
-    if (cro_buffer & 0xFFF) {
+    if (cro_buffer_ptr & 0xFFF) {
         LOG_ERROR(Service_LDR, "CRO original address is not aligned");
         cmd_buff[1] = ERROR_MISALIGNED_ADDRESS.raw;
         return;
@@ -2190,9 +2190,9 @@ static void LoadCRO(Service::Interface* self) {
         return;
     }
 
-    auto vma = Kernel::g_current_process->vm_manager.FindVMA(cro_buffer);
+    auto vma = Kernel::g_current_process->vm_manager.FindVMA(cro_buffer_ptr);
     if (vma == Kernel::g_current_process->vm_manager.vma_map.end()
-        || vma->second.base + vma->second.size < cro_buffer + cro_size
+        || vma->second.base + vma->second.size < cro_buffer_ptr + cro_size
         || vma->second.permissions != Kernel::VMAPermission::ReadWrite
         || vma->second.meminfo_state != Kernel::MemoryState::Private) {
         LOG_ERROR(Service_LDR, "CRO original buffer is in invalid state");
@@ -2214,7 +2214,7 @@ static void LoadCRO(Service::Interface* self) {
 
     // TODO(wwylele): should be memory aliasing
     std::shared_ptr<std::vector<u8>> cro_mem = std::make_shared<std::vector<u8>>(cro_size);
-    Memory::ReadBlock(cro_buffer, cro_mem->data(), cro_size);
+    Memory::ReadBlock(cro_buffer_ptr, cro_mem->data(), cro_size);
     ResultCode result = Kernel::g_current_process->vm_manager.MapMemoryBlock(cro_address, cro_mem, 0, cro_size, Kernel::MemoryState::Code).Code();
     if (result.IsError()) {
         LOG_ERROR(Service_LDR, "Error mapping memory block %08X", result.raw);
@@ -2230,7 +2230,7 @@ static void LoadCRO(Service::Interface* self) {
         return;
     }
 
-    memory_synchronizer.AddMemoryBlock(cro_address, cro_buffer, cro_size);
+    memory_synchronizer.AddMemoryBlock(cro_address, cro_buffer_ptr, cro_size);
 
     CROHelper cro(cro_address);
 
@@ -2275,7 +2275,7 @@ static void LoadCRO(Service::Interface* self) {
     }
 
     // Changes the block size
-    memory_synchronizer.AddMemoryBlock(cro_address, cro_buffer, fix_size);
+    memory_synchronizer.AddMemoryBlock(cro_address, cro_buffer_ptr, fix_size);
 
     VAddr exe_begin;
     u32 exe_size;
@@ -2536,12 +2536,12 @@ static void UnlinkCRO(Service::Interface* self) {
  */
 static void Shutdown(Service::Interface* self) {
     u32* cmd_buff = Kernel::GetCommandBuffer();
-    VAddr crs_buffer = cmd_buff[1];
-    u32 descriptor   = cmd_buff[2];
-    u32 process      = cmd_buff[3];
+    VAddr crs_buffer_ptr = cmd_buff[1];
+    u32 descriptor       = cmd_buff[2];
+    u32 process          = cmd_buff[3];
 
-    LOG_DEBUG(Service_LDR, "called, crs_buffer=0x%08X, descriptor=0x%08X, process=0x%08X",
-        crs_buffer, descriptor, process);
+    LOG_DEBUG(Service_LDR, "called, crs_buffer_ptr=0x%08X, descriptor=0x%08X, process=0x%08X",
+        crs_buffer_ptr, descriptor, process);
 
     if (descriptor != 0) {
         LOG_ERROR(Service_LDR, "IPC handle descriptor failed validation (0x%X).", descriptor);
