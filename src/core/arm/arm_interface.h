@@ -33,7 +33,7 @@ public:
     }
 
     /// Clear all instruction cache
-    virtual void ClearInstructionCache() { }
+    virtual void ClearInstructionCache() = 0;
 
     /**
      * Set the Program Counter to an address
