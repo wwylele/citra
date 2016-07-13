@@ -298,8 +298,8 @@ class CROHelper final {
      * @returns ResultCode indicating the result of the operation, RESULT_SUCCESS if all iteration success,
      *         otherwise error code of the last iteration.
      */
-    template <typename T>
-    static ResultCode ForEachAutoLinkCRO(VAddr crs_address, T func) {
+    template <typename FunctionObject>
+    static ResultCode ForEachAutoLinkCRO(VAddr crs_address, FunctionObject func) {
         VAddr current = crs_address;
         while (current) {
             CROHelper cro(current);
