@@ -1809,7 +1809,7 @@ public:
             }
         }
 
-        fix_end = Common::AlignUp(fix_end, 0x1000);
+        fix_end = Common::AlignUp(fix_end, Memory::PAGE_SIZE);
 
         u32 fixed_size = fix_end - address;
         SetField(FixedSize, fixed_size);
@@ -1840,8 +1840,8 @@ public:
             SegmentEntry entry;
             GetEntry(i, entry);
             if (entry.type == SegmentType::Code && entry.size != 0) {
-                VAddr begin = Common::AlignDown(entry.offset, 0x1000);
-                VAddr end = Common::AlignUp(entry.offset + entry.size, 0x1000);
+                VAddr begin = Common::AlignDown(entry.offset, Memory::PAGE_SIZE);
+                VAddr end = Common::AlignUp(entry.offset + entry.size, Memory::PAGE_SIZE);
                 return std::make_tuple(begin, end - begin);
             }
         }
@@ -1976,19 +1976,19 @@ static void Initialize(Service::Interface* self) {
         return;
     }
 
-    if (crs_buffer_ptr & 0xFFF) {
+    if (crs_buffer_ptr & Memory::PAGE_MASK) {
         LOG_ERROR(Service_LDR, "CRS original address is not aligned");
         cmd_buff[1] = ERROR_MISALIGNED_ADDRESS.raw;
         return;
     }
 
-    if (crs_address & 0xFFF) {
+    if (crs_address & Memory::PAGE_MASK) {
         LOG_ERROR(Service_LDR, "CRS mapping address is not aligned");
         cmd_buff[1] = ERROR_MISALIGNED_ADDRESS.raw;
         return;
     }
 
-    if (crs_size & 0xFFF) {
+    if (crs_size & Memory::PAGE_MASK) {
         LOG_ERROR(Service_LDR, "CRS size is not aligned");
         cmd_buff[1] = ERROR_MISALIGNED_SIZE.raw;
         return;
@@ -2177,19 +2177,19 @@ static void LoadCRO(Service::Interface* self) {
         return;
     }
 
-    if (cro_buffer_ptr & 0xFFF) {
+    if (cro_buffer_ptr & Memory::PAGE_MASK) {
         LOG_ERROR(Service_LDR, "CRO original address is not aligned");
         cmd_buff[1] = ERROR_MISALIGNED_ADDRESS.raw;
         return;
     }
 
-    if (cro_address & 0xFFF) {
+    if (cro_address & Memory::PAGE_MASK) {
         LOG_ERROR(Service_LDR, "CRO mapping address is not aligned");
         cmd_buff[1] = ERROR_MISALIGNED_ADDRESS.raw;
         return;
     }
 
-    if (cro_size & 0xFFF) {
+    if (cro_size & Memory::PAGE_MASK) {
         LOG_ERROR(Service_LDR, "CRO size is not aligned");
         cmd_buff[1] = ERROR_MISALIGNED_SIZE.raw;
         return;
@@ -2342,7 +2342,7 @@ static void UnloadCRO(Service::Interface* self) {
         return;
     }
 
-    if (cro_address & 0xFFF) {
+    if (cro_address & Memory::PAGE_MASK) {
         LOG_ERROR(Service_LDR, "CRO address is not aligned");
         cmd_buff[1] = ERROR_MISALIGNED_ADDRESS.raw;
         return;
@@ -2437,7 +2437,7 @@ static void LinkCRO(Service::Interface* self) {
         return;
     }
 
-    if (cro_address & 0xFFF) {
+    if (cro_address & Memory::PAGE_MASK) {
         LOG_ERROR(Service_LDR, "CRO address is not aligned");
         cmd_buff[1] = ERROR_MISALIGNED_ADDRESS.raw;
         return;
@@ -2500,7 +2500,7 @@ static void UnlinkCRO(Service::Interface* self) {
         return;
     }
 
-    if (cro_address & 0xFFF) {
+    if (cro_address & Memory::PAGE_MASK) {
         LOG_ERROR(Service_LDR, "CRO address is not aligned");
         cmd_buff[1] = ERROR_MISALIGNED_ADDRESS.raw;
         return;
