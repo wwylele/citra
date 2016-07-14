@@ -7,6 +7,7 @@
 
 #include "common/assert.h"
 #include "common/key_map.h"
+#include "common/profiler_reporting.h"
 
 #include "emu_window.h"
 #include "video_core/video_core.h"
@@ -89,6 +90,25 @@ void EmuWindow::TouchMoved(unsigned framebuffer_x, unsigned framebuffer_y) {
         std::tie(framebuffer_x, framebuffer_y) = ClipToTouchScreen(framebuffer_x, framebuffer_y);
 
     TouchPressed(framebuffer_x, framebuffer_y);
+}
+
+void EmuWindow::AccelerometerChanged(float x, float y, float z) {
+    constexpr float coef = 512;
+
+    // TODO(wwylele): do a time stretch as it in GyroscopeChanged
+    // The time stretch formula should be like
+    // stretched_vector = (raw_vector - gravity) * stretch_ratio + gravity
+    accel_x = x * coef;
+    accel_y = y * coef;
+    accel_z = z * coef;
+}
+
+void EmuWindow::GyroscopeChanged(float x, float y, float z) {
+    float coef = GetGyroscopeRawToDpsCoefficient();
+    float stretch = 60 / Common::Profiling::GetTimingResultsAggregator()->GetAggregatedResults().fps;
+    gyro_x = x * coef * stretch;
+    gyro_y = y * coef * stretch;
+    gyro_z = z * coef * stretch;
 }
 
 EmuWindow::FramebufferLayout EmuWindow::FramebufferLayout::DefaultScreenLayout(unsigned width, unsigned height) {
