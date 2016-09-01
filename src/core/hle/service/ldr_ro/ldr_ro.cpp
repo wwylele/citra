@@ -11,6 +11,7 @@
 #include "core/hle/kernel/process.h"
 #include "core/hle/kernel/vm_manager.h"
 #include "core/hle/service/ldr_ro/cro_helper.h"
+#include "core/hle/service/ldr_ro/hash_list.h"
 #include "core/hle/service/ldr_ro/ldr_ro.h"
 #include "core/hle/service/ldr_ro/memory_synchronizer.h"
 
@@ -46,6 +47,7 @@ static MemorySynchronizer memory_synchronizer;
 
 // TODO(wwylele): this should be in the per-client storage when we implement multi-process
 static VAddr loaded_crs; ///< the virtual address of the static module
+static VAddr head_crr;   /// the virtual address if the first loaded CRR
 
 static bool VerifyBufferState(VAddr buffer_ptr, u32 size) {
     auto vma = Kernel::g_current_process->vm_manager.FindVMA(buffer_ptr);
@@ -195,7 +197,7 @@ static void LoadCRR(Interface* self) {
     Kernel::Handle process = rp.PopHandle();
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
-    rb.Push(RESULT_SUCCESS);
+    rb.Push(HashList::LoadCRR(crr_buffer_ptr));
 
     LOG_WARNING(Service_LDR,
                 "(STUBBED) called, crr_buffer_ptr=0x%08X, crr_size=0x%08X, process=0x%08X",
@@ -219,7 +221,7 @@ static void UnloadCRR(Interface* self) {
     Kernel::Handle process = rp.PopHandle();
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
-    rb.Push(RESULT_SUCCESS);
+    rb.Push(HashList::UnloadCRR(crr_buffer_ptr));
 
     LOG_WARNING(Service_LDR, "(STUBBED) called, crr_buffer_ptr=0x%08X, process=0x%08X",
                 crr_buffer_ptr, process);
@@ -711,6 +713,7 @@ LDR_RO::LDR_RO() {
     Register(FunctionTable);
 
     loaded_crs = 0;
+    HashList::Clear();
     memory_synchronizer.Clear();
 }
 

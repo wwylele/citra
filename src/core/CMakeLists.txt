@@ -117,6 +117,7 @@ set(SRCS
             hle/service/ir/ir_u.cpp
             hle/service/ir/ir_user.cpp
             hle/service/ldr_ro/cro_helper.cpp
+            hle/service/ldr_ro/hash_list.cpp
             hle/service/ldr_ro/ldr_ro.cpp
             hle/service/ldr_ro/memory_synchronizer.cpp
             hle/service/mic_u.cpp
@@ -315,6 +316,7 @@ set(HEADERS
             hle/service/ir/ir_u.h
             hle/service/ir/ir_user.h
             hle/service/ldr_ro/cro_helper.h
+            hle/service/ldr_ro/hash_list.h
             hle/service/ldr_ro/ldr_ro.h
             hle/service/ldr_ro/memory_synchronizer.h
             hle/service/mic_u.h

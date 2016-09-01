@@ -2,10 +2,13 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include <vector>
+#include <cryptopp/sha.h>
 #include "common/alignment.h"
 #include "common/logging/log.h"
 #include "common/scope_exit.h"
 #include "core/hle/service/ldr_ro/cro_helper.h"
+#include "core/hle/service/ldr_ro/hash_list.h"
 
 namespace Service {
 namespace LDR {
@@ -1210,8 +1213,44 @@ void CROHelper::Unrebase(bool is_crs) {
     UnrebaseHeader();
 }
 
+static std::array<u8, CryptoPP::SHA256::DIGESTSIZE> SHA256(const u8* data, size_t len) {
+    std::array<u8, CryptoPP::SHA256::DIGESTSIZE> hash;
+    CryptoPP::SHA256().CalculateDigest(hash.data(), data, len);
+    return hash;
+};
+
 ResultCode CROHelper::VerifyHash(u32 cro_size, VAddr crr) const {
-    // TODO(wwylele): actually verify the hash
+    u8 hashes[0x80];
+    Memory::ReadBlock(module_address, hashes, 0x80);
+    auto main_hash = SHA256(hashes, 0x80);
+
+    ResultCode result = HashList::VerifyHash(crr, main_hash.data());
+    if (result.IsError()) {
+        LOG_ERROR(Service_LDR, "Failed verifying main hash");
+        return result;
+    }
+
+    VAddr block_start[] = {
+        module_address + 0x80,
+        module_address + GetField(CodeOffset),
+        module_address + GetField(NameOffset),
+        module_address + GetField(DataOffset),
+    //  module_address + GetField(DataOffset) + GetField(DataSize)
+    };
+
+    // Although the fourth block matches the hash, real RO service doesn't
+    // verify it for some reason.
+    for (int i = 0; i < 3 /*4*/; ++i) {
+        auto len = block_start[i + 1] - block_start[i];
+        std::vector<u8> data_buf(len);
+        Memory::ReadBlock(block_start[i], data_buf.data(), len);
+        auto hash = SHA256(data_buf.data(), len);
+        if (std::memcmp(hash.data(), hashes + i * 0x20, 0x20) != 0) {
+            LOG_ERROR(Service_LDR, "Failed verifying block %d", i);
+            return ResultCode(0xE0E12C20);
+        }
+    }
+
     return RESULT_SUCCESS;
 }
 
