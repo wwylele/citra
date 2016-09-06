@@ -9,10 +9,9 @@
 
 #include "core/settings.h"
 
-ConfigureDialog::ConfigureDialog(QWidget *parent, bool running) :
+ConfigureDialog::ConfigureDialog(QWidget *parent) :
     QDialog(parent),
-    ui(new Ui::ConfigureDialog),
-    emulation_running(running)
+    ui(new Ui::ConfigureDialog)
 {
     ui->setupUi(this);
     this->setConfiguration();
@@ -22,15 +21,13 @@ ConfigureDialog::~ConfigureDialog() {
 }
 
 void ConfigureDialog::setConfiguration() {
-    // System tab needs set manually
-    // depending on whether emulation is running
-    ui->systemTab->setConfiguration(emulation_running);
 }
 
 void ConfigureDialog::applyConfiguration() {
     ui->generalTab->applyConfiguration();
     ui->systemTab->applyConfiguration();
     ui->inputTab->applyConfiguration();
+    ui->graphicsTab->applyConfiguration();
     ui->audioTab->applyConfiguration();
     ui->debugTab->applyConfiguration();
 }

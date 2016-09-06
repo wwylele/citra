@@ -55,6 +55,10 @@ use_shader_jit =
 # 0 (default): Native, 1: Scaled
 use_scaled_resolution =
 
+# Whether to enable V-Sync (caps the framerate at 60FPS) or not.
+# 0 (default): Off, 1: On
+use_vsync =
+
 # The clear color for the renderer. What shows up on the sides of the bottom screen.
 # Must be in range of 0.0-1.0. Defaults to 1.0 for all.
 bg_red =
@@ -65,6 +69,12 @@ bg_green =
 # Which audio output engine to use.
 # auto (default): Auto-select, null: No audio output, sdl2: SDL2 (if available)
 output_engine =
+
+# Whether or not to enable the audio-stretching post-processing effect.
+# This effect adjusts audio speed to match emulation speed and helps prevent audio stutter,
+# at the cost of increasing audio latency.
+# 0: No, 1 (default): Yes
+enable_audio_stretching =
 
 [Data Storage]
 # Whether to create a virtual SD card.

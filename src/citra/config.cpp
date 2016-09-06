@@ -71,6 +71,7 @@ void Config::ReadValues() {
     Settings::values.use_hw_renderer = sdl2_config->GetBoolean("Renderer", "use_hw_renderer", true);
     Settings::values.use_shader_jit = sdl2_config->GetBoolean("Renderer", "use_shader_jit", true);
     Settings::values.use_scaled_resolution = sdl2_config->GetBoolean("Renderer", "use_scaled_resolution", false);
+    Settings::values.use_vsync = sdl2_config->GetBoolean("Renderer", "use_vsync", false);
 
     Settings::values.bg_red   = (float)sdl2_config->GetReal("Renderer", "bg_red",   1.0);
     Settings::values.bg_green = (float)sdl2_config->GetReal("Renderer", "bg_green", 1.0);
@@ -78,6 +79,7 @@ void Config::ReadValues() {
 
     // Audio
     Settings::values.sink_id = sdl2_config->Get("Audio", "output_engine", "auto");
+    Settings::values.enable_audio_stretching = sdl2_config->GetBoolean("Audio", "enable_audio_stretching", true);
 
     // Data Storage
     Settings::values.use_virtual_sd = sdl2_config->GetBoolean("Data Storage", "use_virtual_sd", true);

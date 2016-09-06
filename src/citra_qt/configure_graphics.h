@@ -5,19 +5,19 @@
 #pragma once
 
 #include <memory>
-#include <QDialog>
+#include <QWidget>
 
 namespace Ui {
-class ConfigureDialog;
+class ConfigureGraphics;
 }
 
-class ConfigureDialog : public QDialog
+class ConfigureGraphics : public QWidget
 {
     Q_OBJECT
 
 public:
-    explicit ConfigureDialog(QWidget *parent);
-    ~ConfigureDialog();
+    explicit ConfigureGraphics(QWidget *parent = nullptr);
+    ~ConfigureGraphics();
 
     void applyConfiguration();
 
@@ -25,5 +25,5 @@ private:
     void setConfiguration();
 
 private:
-    std::unique_ptr<Ui::ConfigureDialog> ui;
+    std::unique_ptr<Ui::ConfigureGraphics> ui;
 };

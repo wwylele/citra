@@ -72,6 +72,7 @@ struct Values {
     bool use_hw_renderer;
     bool use_shader_jit;
     bool use_scaled_resolution;
+    bool use_vsync;
 
     float bg_red;
     float bg_green;
@@ -81,6 +82,7 @@ struct Values {
 
     // Audio
     std::string sink_id;
+    bool enable_audio_stretching;
 
     // Debugging
     bool use_gdbstub;
