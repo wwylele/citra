@@ -359,7 +359,7 @@ ResultCode CreateConfigInfoBlk(u32 block_id, u16 size, u16 flags, const void* da
 }
 
 ResultCode DeleteConfigNANDSaveFile() {
-    FileSys::Path path("config");
+    FileSys::Path path("/config");
     return Service::FS::DeleteFileFromArchive(cfg_system_save_data_archive, path);
 }
 
@@ -368,7 +368,7 @@ ResultCode UpdateConfigNANDSavegame() {
     mode.write_flag.Assign(1);
     mode.create_flag.Assign(1);
 
-    FileSys::Path path("config");
+    FileSys::Path path("/config");
 
     auto config_result = Service::FS::OpenFileFromArchive(cfg_system_save_data_archive, path, mode);
     ASSERT_MSG(config_result.Succeeded(), "could not open file");
@@ -504,7 +504,7 @@ ResultCode LoadConfigNANDSaveFile() {
 
     cfg_system_save_data_archive = *archive_result;
 
-    FileSys::Path config_path("config");
+    FileSys::Path config_path("/config");
     FileSys::Mode open_mode = {};
     open_mode.read_flag.Assign(1);
 
