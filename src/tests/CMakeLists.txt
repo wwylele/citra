@@ -1,5 +1,6 @@
 set(SRCS
             tests.cpp
+            sample.cpp
             )
 
 set(HEADERS
