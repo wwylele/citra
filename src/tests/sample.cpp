@@ -4,12 +4,12 @@
 
 #include <SDL.h>
 #include <catch.hpp>
-#include <glad/glad.h>
+// #include <glad/glad.h>
 #include "common/file_util.h"
 #include "core/core_timing.h"
 
 TEST_CASE("Dummy", "[test]") {
-    gladLoadGLLoader([](const char* name) -> void* { return 0; });
+    // gladLoadGLLoader([](const char* name) -> void* { return 0; });
     SDL_GL_GetProcAddress("");
     REQUIRE(1 + 1 == 2);
     REQUIRE(CoreTiming::GetClockFrequencyMHz() != 0);
