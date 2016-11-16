@@ -8,7 +8,7 @@
 #include "core/core_timing.h"
 
 TEST_CASE("Dummy", "[test]") {
-    gladLoadGLLoader([](const char* name) -> void* { return 0; });
+    gladLoadGL();
     REQUIRE(1 + 1 == 2);
     REQUIRE(CoreTiming::GetClockFrequencyMHz() != 0);
 }
