@@ -9,7 +9,8 @@
 #include "core/core_timing.h"
 
 TEST_CASE("Dummy", "[test]") {
-    gladLoadGLLoader(static_cast<GLADloadproc>(SDL_GL_GetProcAddress));
+    gladLoadGLLoader([](const char* name) -> void* { return 0; });
+    SDL_GL_GetProcAddress("");
     REQUIRE(1 + 1 == 2);
     REQUIRE(CoreTiming::GetClockFrequencyMHz() != 0);
 }
