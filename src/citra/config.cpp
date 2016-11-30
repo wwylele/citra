@@ -87,7 +87,7 @@ void Config::ReadValues() {
 
     // System
     Settings::values.is_new_3ds = sdl2_config->GetBoolean("System", "is_new_3ds", false);
-    Settings::values.region_value = sdl2_config->GetInteger("System", "region_value", 1);
+    Settings::values.region_value = sdl2_config->GetInteger("System", "region_value", -1);
 
     // Miscellaneous
     Settings::values.log_filter = sdl2_config->Get("Miscellaneous", "log_filter", "*:Info");

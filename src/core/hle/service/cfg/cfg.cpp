@@ -114,6 +114,8 @@ static const std::vector<u8> cfg_system_savedata_id = {
     0x00, 0x00, 0x00, 0x00, 0x17, 0x00, 0x01, 0x00,
 };
 
+static u32 preferred_region_code = 0;
+
 void GetCountryCodeString(Service::Interface* self) {
     u32* cmd_buff = Kernel::GetCommandBuffer();
     u32 country_code_id = cmd_buff[1];
@@ -163,7 +165,12 @@ void SecureInfoGetRegion(Service::Interface* self) {
     u32* cmd_buff = Kernel::GetCommandBuffer();
 
     cmd_buff[1] = RESULT_SUCCESS.raw;
-    cmd_buff[2] = Settings::values.region_value;
+
+    if (Settings::values.region_value == -1) {
+        cmd_buff[2] = preferred_region_code;
+    } else {
+        cmd_buff[2] = Settings::values.region_value;
+    }
 }
 
 void GenHashConsoleUnique(Service::Interface* self) {
@@ -182,8 +189,15 @@ void GetRegionCanadaUSA(Service::Interface* self) {
 
     cmd_buff[1] = RESULT_SUCCESS.raw;
 
+    u32 region_value;
+    if (Settings::values.region_value == -1) {
+        region_value = preferred_region_code;
+    } else {
+        region_value = Settings::values.region_value;
+    }
+
     u8 canada_or_usa = 1;
-    if (canada_or_usa == Settings::values.region_value) {
+    if (canada_or_usa == region_value) {
         cmd_buff[2] = 1;
     } else {
         cmd_buff[2] = 0;
@@ -317,6 +331,35 @@ ResultCode GetConfigInfoBlock(u32 block_id, u32 size, u32 flag, void* output) {
     void* pointer;
     CASCADE_RESULT(pointer, GetConfigInfoBlockPointer(block_id, size, flag));
     memcpy(output, pointer, size);
+
+    // override the language setting if the region setting is auto
+    if (block_id == LanguageBlockID && Settings::values.region_value == -1) {
+        SystemLanguage language = static_cast<SystemLanguage>(*reinterpret_cast<u8*>(output));
+        const std::array<std::vector<SystemLanguage>, 7> region_languages{{
+            // JPN
+            {LANGUAGE_JP},
+            // USA
+            {LANGUAGE_EN, LANGUAGE_FR, LANGUAGE_ES, LANGUAGE_PT},
+            // EUR
+            {LANGUAGE_EN, LANGUAGE_FR, LANGUAGE_DE, LANGUAGE_IT, LANGUAGE_ES, LANGUAGE_NL,
+             LANGUAGE_PT, LANGUAGE_RU},
+            // AUS
+            {LANGUAGE_EN, LANGUAGE_FR, LANGUAGE_DE, LANGUAGE_IT, LANGUAGE_ES, LANGUAGE_NL,
+             LANGUAGE_PT, LANGUAGE_RU},
+            // CHN
+            {LANGUAGE_ZH},
+            // KOR
+            {LANGUAGE_KO},
+            // TWN
+            {LANGUAGE_TW},
+        }};
+        auto& available = region_languages[preferred_region_code];
+        if (std::find(available.begin(), available.end(), language) == available.end()) {
+            language = available[0];
+            *reinterpret_cast<u8*>(output) = static_cast<u8>(language);
+        }
+    }
+
     return RESULT_SUCCESS;
 }
 
@@ -533,9 +576,16 @@ void Init() {
     AddService(new CFG_U_Interface);
 
     LoadConfigNANDSaveFile();
+
+    preferred_region_code = 0;
 }
 
 void Shutdown() {}
+
+void SetPreferredRegionCode(u32 region_code) {
+    preferred_region_code = region_code;
+    LOG_INFO(Service_CFG, "Preferred region code set to %u", preferred_region_code);
+}
 
 void SetUsername(const std::u16string& name) {
     ASSERT(name.size() <= 10);
