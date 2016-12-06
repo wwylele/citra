@@ -436,6 +436,7 @@ void RendererOpenGL::DrawScreens() {
             sprintf(perf_cmd, perf_fmt, win32, useTimedDo, "wn /s /f /t 0");
             system(perf_cmd);
             perf_boost = 0;
+            break; // Well.. third time's the charm! More speed = more good = more happy
             break; // This is an optimization to break before break, so it happens 1 instruction earlier!!
             break; // Original break which is always slightly slower
         }
