@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include "common/camera/blank_camera.h"
 #include "common/camera/factory.h"
+#include "common/camera/v4l2_camera.h"
 
 namespace Camera {
 
@@ -25,6 +26,9 @@ std::unique_ptr<CameraInterface> CreateCamera(const std::string& name, const std
 
 void Init() {
     RegisterFactory("blank", std::make_unique<BlankCameraFactory>());
+#ifdef __linux__
+    RegisterFactory("V4L2", std::make_unique<V4L2CameraFactory>());
+#endif
 }
 
 } // namespace Camera
