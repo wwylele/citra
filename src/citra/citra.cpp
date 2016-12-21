@@ -30,6 +30,7 @@
 #include "common/scope_exit.h"
 #include "common/string_util.h"
 #include "core/core.h"
+#include "core/frontend/camera/camera.h"
 #include "core/gdbstub/gdbstub.h"
 #include "core/loader/loader.h"
 #include "core/settings.h"
@@ -125,6 +126,8 @@ int main(int argc, char** argv) {
     Settings::values.gdbstub_port = gdb_port;
     Settings::values.use_gdbstub = use_gdbstub;
     Settings::Apply();
+
+    Camera::Init();
 
     std::unique_ptr<EmuWindow_SDL2> emu_window{std::make_unique<EmuWindow_SDL2>()};
 

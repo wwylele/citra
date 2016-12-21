@@ -43,6 +43,7 @@
 #include "core/arm/disassembler/load_symbol_map.h"
 #include "core/core.h"
 #include "core/file_sys/archive_source_sd_savedata.h"
+#include "core/frontend/camera/camera.h"
 #include "core/gdbstub/gdbstub.h"
 #include "core/loader/loader.h"
 #include "core/settings.h"
@@ -646,6 +647,8 @@ int main(int argc, char* argv[]) {
     GMainWindow main_window;
     // After settings have been loaded by GMainWindow, apply the filter
     log_filter.ParseFilterString(Settings::values.log_filter);
+
+    Camera::Init();
 
     main_window.show();
     return app.exec();
