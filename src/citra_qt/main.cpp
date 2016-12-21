@@ -13,6 +13,7 @@
 #include <QMessageBox>
 #include <QtGui>
 #include "citra_qt/bootmanager.h"
+#include "citra_qt/camera/still_image_camera.h"
 #include "citra_qt/config.h"
 #include "citra_qt/configure_dialog.h"
 #include "citra_qt/debugger/callstack.h"
@@ -649,6 +650,7 @@ int main(int argc, char* argv[]) {
     log_filter.ParseFilterString(Settings::values.log_filter);
 
     Camera::Init();
+    Camera::RegisterFactory("image", std::make_unique<Camera::StillImageCameraFactory>());
 
     main_window.show();
     return app.exec();
