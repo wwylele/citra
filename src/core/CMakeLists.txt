@@ -33,6 +33,7 @@ set(SRCS
             frontend/camera/camera.cpp
             frontend/camera/factory.cpp
             frontend/camera/interface.cpp
+            frontend/camera/v4l2_camera.cpp
             frontend/emu_window.cpp
             frontend/key_map.cpp
             gdbstub/gdbstub.cpp
@@ -208,6 +209,7 @@ set(HEADERS
             frontend/camera/camera.h
             frontend/camera/factory.h
             frontend/camera/interface.h
+            frontend/camera/v4l2_camera.h
             frontend/emu_window.h
             frontend/key_map.h
             gdbstub/gdbstub.h

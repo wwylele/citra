@@ -6,6 +6,7 @@
 #include "common/logging/log.h"
 #include "core/frontend/camera/blank_camera.h"
 #include "core/frontend/camera/factory.h"
+#include "core/frontend/camera/v4l2_camera.h"
 
 namespace Camera {
 
