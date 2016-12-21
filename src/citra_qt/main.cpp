@@ -31,6 +31,7 @@
 #include "citra_qt/hotkeys.h"
 #include "citra_qt/main.h"
 #include "citra_qt/ui_settings.h"
+#include "common/camera/factory.h"
 #include "common/logging/backend.h"
 #include "common/logging/filter.h"
 #include "common/logging/log.h"
@@ -646,6 +647,8 @@ int main(int argc, char* argv[]) {
     GMainWindow main_window;
     // After settings have been loaded by GMainWindow, apply the filter
     log_filter.ParseFilterString(Settings::values.log_filter);
+
+    Camera::Init();
 
     main_window.show();
     return app.exec();

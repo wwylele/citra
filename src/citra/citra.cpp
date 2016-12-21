@@ -23,6 +23,7 @@
 
 #include "citra/config.h"
 #include "citra/emu_window/emu_window_sdl2.h"
+#include "common/camera/factory.h"
 #include "common/logging/backend.h"
 #include "common/logging/filter.h"
 #include "common/logging/log.h"
@@ -125,6 +126,8 @@ int main(int argc, char** argv) {
     Settings::values.gdbstub_port = gdb_port;
     Settings::values.use_gdbstub = use_gdbstub;
     Settings::Apply();
+
+    Camera::Init();
 
     std::unique_ptr<EmuWindow_SDL2> emu_window{std::make_unique<EmuWindow_SDL2>()};
 
