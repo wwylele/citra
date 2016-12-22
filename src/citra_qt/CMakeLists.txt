@@ -3,6 +3,7 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/CMakeModules)
 
 set(SRCS
+            camera/still_image_camera.cpp
             config.cpp
             debugger/callstack.cpp
             debugger/disassembler.cpp
@@ -36,6 +37,7 @@ set(SRCS
             )
 
 set(HEADERS
+            camera/still_image_camera.h
             config.h
             debugger/callstack.h
             debugger/disassembler.h

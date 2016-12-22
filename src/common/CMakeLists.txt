@@ -3,6 +3,9 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/scm_rev.cpp.in" "${CMAKE_CURRENT_SOU
 
 set(SRCS
             break_points.cpp
+            camera/blank_camera.cpp
+            camera/factory.cpp
+            camera/v4l2_camera.cpp
             emu_window.cpp
             file_util.cpp
             framebuffer_layout.cpp
@@ -28,6 +31,10 @@ set(HEADERS
             bit_field.h
             bit_set.h
             break_points.h
+            camera/blank_camera.h
+            camera/factory.h
+            camera/interface.h
+            camera/v4l2_camera.h
             chunk_file.h
             code_block.h
             color.h

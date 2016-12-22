@@ -105,6 +105,10 @@ struct Values {
     std::string sink_id;
     bool enable_audio_stretching;
 
+    // Camera
+    std::string camera_name[3];
+    std::string camera_config[3];
+
     // Debugging
     bool use_gdbstub;
     u16 gdbstub_port;
