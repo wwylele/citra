@@ -18,6 +18,7 @@
 #include "core/hle/service/fs/archive.h"
 #include "core/hle/service/ptm/ptm.h"
 #include "core/hle/service/service.h"
+#include "core/hw/aes/aes.h"
 
 namespace Service {
 namespace APT {
@@ -468,6 +469,96 @@ void GetStartupArgument(Service::Interface* self) {
 
     cmd_buff[1] = RESULT_SUCCESS.raw;
     cmd_buff[2] = 0;
+}
+
+void Wrap(Service::Interface* self) {
+    u32* cmd_buff = Kernel::GetCommandBuffer();
+    const u32 output_size = cmd_buff[1];
+    const u32 input_size = cmd_buff[2];
+    const u32 nonce_offset = cmd_buff[3];
+    u32 nonce_size = cmd_buff[4];
+    ASSERT(cmd_buff[5] == IPC::MappedBufferDesc(input_size, IPC::MappedBufferPermissions::R));
+    const VAddr input = cmd_buff[6];
+    ASSERT(cmd_buff[7] == IPC::MappedBufferDesc(output_size, IPC::MappedBufferPermissions::W));
+    const VAddr output = cmd_buff[8];
+
+    if (output_size != input_size + HW::AES::CCM_MAC_SIZE) {
+        LOG_ERROR(Service_APT, "input_size (%d) doesn't  match to output_size (%d)", input_size,
+                  output_size);
+        // TODO: then what happens?
+    }
+
+    LOG_DEBUG(Service_APT, "called, output_size=%u, input_size=%u, nonce_offset=%u, nonce_size=%u",
+              output_size, input_size, nonce_offset, nonce_size);
+
+    // Note: This wierd nonce size modification is verified against real 3DS
+    nonce_size = std::min<u32>(nonce_size & ~3, HW::AES::CCM_NONCE_SIZE);
+
+    // Reads nonce and concatenates the rest of the input as plain text
+    HW::AES::CCMNonce nonce{};
+    Memory::ReadBlock(input + nonce_offset, nonce.data(), nonce_size);
+    u32 pdata_size = input_size - nonce_size;
+    std::vector<u8> pdata(pdata_size);
+    Memory::ReadBlock(input, pdata.data(), nonce_offset);
+    Memory::ReadBlock(input + nonce_offset + nonce_size, pdata.data() + nonce_offset,
+                      pdata_size - nonce_offset);
+
+    // encrypts the plain text using AES-CCM
+    auto cipher = HW::AES::EncryptSignCCM(pdata, nonce, HW::AES::KeySlotID::APTWrap);
+
+    // Puts the nonce to the begining of the output, with cipher text data followed
+    Memory::WriteBlock(output, nonce.data(), nonce_size);
+    Memory::WriteBlock(output + nonce_size, cipher.data(), pdata_size + 16);
+
+    cmd_buff[1] = RESULT_SUCCESS.raw;
+}
+
+void Unwrap(Service::Interface* self) {
+    u32* cmd_buff = Kernel::GetCommandBuffer();
+    const u32 output_size = cmd_buff[1];
+    const u32 input_size = cmd_buff[2];
+    const u32 nonce_offset = cmd_buff[3];
+    u32 nonce_size = cmd_buff[4];
+    ASSERT(cmd_buff[5] == IPC::MappedBufferDesc(input_size, IPC::MappedBufferPermissions::R));
+    const VAddr input = cmd_buff[6];
+    ASSERT(cmd_buff[7] == IPC::MappedBufferDesc(output_size, IPC::MappedBufferPermissions::W));
+    const VAddr output = cmd_buff[8];
+
+    if (output_size != input_size - HW::AES::CCM_MAC_SIZE) {
+        LOG_ERROR(Service_APT, "input_size (%d) doesn't  match to output_size (%d)", input_size,
+                  output_size);
+        // TODO: then what happens?
+    }
+
+    LOG_DEBUG(Service_APT, "called, output_size=%u, input_size=%u, nonce_offset=%u, nonce_size=%u",
+              output_size, input_size, nonce_offset, nonce_size);
+
+    // Note: This wierd nonce size modification is verified against real 3DS
+    nonce_size = std::min<u32>(nonce_size & ~3, HW::AES::CCM_NONCE_SIZE);
+
+    // Reads nonce and cipher text
+    HW::AES::CCMNonce nonce{};
+    Memory::ReadBlock(input, nonce.data(), nonce_size);
+    u32 cipher_size = input_size - nonce_size;
+    std::vector<u8> cipher(cipher_size);
+    Memory::ReadBlock(input + nonce_size, cipher.data(), cipher_size);
+
+    // Decrypts the cipher text using AES-CCM
+    auto pdata = HW::AES::DecryptVerifyCCM(cipher, nonce, HW::AES::KeySlotID::APTWrap);
+
+    if (!pdata.empty()) {
+        // Splits the plain text and put the nonce in between
+        Memory::WriteBlock(output, pdata.data(), nonce_offset);
+        Memory::WriteBlock(output + nonce_offset, nonce.data(), nonce_size);
+        Memory::WriteBlock(output + nonce_offset + nonce_size, pdata.data() + nonce_offset,
+                           pdata.size() - nonce_offset);
+        cmd_buff[1] = RESULT_SUCCESS.raw;
+    } else {
+        LOG_ERROR(Service_APT, "Failed to decrypt data");
+        cmd_buff[1] = ResultCode(static_cast<ErrorDescription>(1), ErrorModule::PS,
+                                 ErrorSummary::WrongArgument, ErrorLevel::Status)
+                          .raw;
+    }
 }
 
 void CheckNew3DSApp(Service::Interface* self) {
