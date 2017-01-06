@@ -10,7 +10,7 @@ namespace HLE {
 namespace Applets {
 
 ResultCode ErrEula::ReceiveParameter(const Service::APT::MessageParameter& parameter) {
-    if (parameter.signal != static_cast<u32>(Service::APT::SignalType::LibAppJustStarted)) {
+    if (parameter.signal != static_cast<u32>(Service::APT::SignalType::Request)) {
         LOG_ERROR(Service_APT, "unsupported signal %u", parameter.signal);
         UNIMPLEMENTED();
         // TODO(Subv): Find the right error code
@@ -36,7 +36,7 @@ ResultCode ErrEula::ReceiveParameter(const Service::APT::MessageParameter& param
 
     // Send the response message with the newly created SharedMemory
     Service::APT::MessageParameter result;
-    result.signal = static_cast<u32>(Service::APT::SignalType::LibAppFinished);
+    result.signal = static_cast<u32>(Service::APT::SignalType::Response);
     result.buffer.clear();
     result.destination_id = static_cast<u32>(Service::APT::AppletId::Application);
     result.sender_id = static_cast<u32>(id);
@@ -47,7 +47,7 @@ ResultCode ErrEula::ReceiveParameter(const Service::APT::MessageParameter& param
 }
 
 ResultCode ErrEula::StartImpl(const Service::APT::AppletStartupParameter& parameter) {
-    started = true;
+    is_running = true;
 
     // TODO(Subv): Set the expected fields in the response buffer before resending it to the
     // application.
@@ -57,12 +57,12 @@ ResultCode ErrEula::StartImpl(const Service::APT::AppletStartupParameter& parame
     Service::APT::MessageParameter message;
     message.buffer.resize(parameter.buffer.size());
     std::fill(message.buffer.begin(), message.buffer.end(), 0);
-    message.signal = static_cast<u32>(Service::APT::SignalType::LibAppClosed);
+    message.signal = static_cast<u32>(Service::APT::SignalType::WakeupByExit);
     message.destination_id = static_cast<u32>(Service::APT::AppletId::Application);
     message.sender_id = static_cast<u32>(id);
     Service::APT::SendParameter(message);
 
-    started = false;
+    is_running = false;
     return RESULT_SUCCESS;
 }
 

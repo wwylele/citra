@@ -60,12 +60,14 @@ enum class Class : ClassType {
     Service_AM,        ///< The AM (Application manager) service
     Service_PTM,       ///< The PTM (Power status & misc.) service
     Service_LDR,       ///< The LDR (3ds dll loader) service
+    Service_MIC,       ///< The MIC (Microphone) service
     Service_NDM,       ///< The NDM (Network daemon manager) service
     Service_NIM,       ///< The NIM (Network interface manager) service
     Service_NWM,       ///< The NWM (Network wlan manager) service
     Service_CAM,       ///< The CAM (Camera) service
     Service_CECD,      ///< The CECD (StreetPass) service
     Service_CFG,       ///< The CFG (Configuration) service
+    Service_CSND,      ///< The CSND (CWAV format process) service
     Service_DSP,       ///< The DSP (DSP control) service
     Service_DLP,       ///< The DLP (Download Play) service
     Service_HID,       ///< The HID (Human interface device) service
@@ -84,8 +86,7 @@ enum class Class : ClassType {
     Audio_DSP,         ///< The HLE implementation of the DSP
     Audio_Sink,        ///< Emulator audio output backend
     Loader,            ///< ROM loader
-
-    Count ///< Total number of logging classes
+    Count              ///< Total number of logging classes
 };
 
 /// Logs a message to the global logger.

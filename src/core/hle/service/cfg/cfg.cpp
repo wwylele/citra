@@ -12,6 +12,7 @@
 #include "core/hle/result.h"
 #include "core/hle/service/cfg/cfg.h"
 #include "core/hle/service/cfg/cfg_i.h"
+#include "core/hle/service/cfg/cfg_nor.h"
 #include "core/hle/service/cfg/cfg_s.h"
 #include "core/hle/service/cfg/cfg_u.h"
 #include "core/hle/service/fs/archive.h"
@@ -45,7 +46,8 @@ static_assert(sizeof(SaveFileConfig) == 0x455C,
 enum ConfigBlockID {
     StereoCameraSettingsBlockID = 0x00050005,
     SoundOutputModeBlockID = 0x00070001,
-    ConsoleUniqueIDBlockID = 0x00090001,
+    ConsoleUniqueID1BlockID = 0x00090000,
+    ConsoleUniqueID2BlockID = 0x00090001,
     UsernameBlockID = 0x000A0000,
     BirthdayBlockID = 0x000A0001,
     LanguageBlockID = 0x000A0002,
@@ -113,6 +115,8 @@ static const std::vector<u8> cfg_system_savedata_id = {
     0x00, 0x00, 0x00, 0x00, 0x17, 0x00, 0x01, 0x00,
 };
 
+static u32 preferred_region_code = 0;
+
 void GetCountryCodeString(Service::Interface* self) {
     u32* cmd_buff = Kernel::GetCommandBuffer();
     u32 country_code_id = cmd_buff[1];
@@ -158,11 +162,18 @@ void GetCountryCodeID(Service::Interface* self) {
     cmd_buff[2] = country_code_id;
 }
 
+static u32 GetRegionValue() {
+    if (Settings::values.region_value == Settings::REGION_VALUE_AUTO_SELECT)
+        return preferred_region_code;
+
+    return Settings::values.region_value;
+}
+
 void SecureInfoGetRegion(Service::Interface* self) {
     u32* cmd_buff = Kernel::GetCommandBuffer();
 
     cmd_buff[1] = RESULT_SUCCESS.raw;
-    cmd_buff[2] = Settings::values.region_value;
+    cmd_buff[2] = GetRegionValue();
 }
 
 void GenHashConsoleUnique(Service::Interface* self) {
@@ -182,7 +193,7 @@ void GetRegionCanadaUSA(Service::Interface* self) {
     cmd_buff[1] = RESULT_SUCCESS.raw;
 
     u8 canada_or_usa = 1;
-    if (canada_or_usa == Settings::values.region_value) {
+    if (canada_or_usa == GetRegionValue()) {
         cmd_buff[2] = 1;
     } else {
         cmd_buff[2] = 0;
@@ -312,10 +323,47 @@ static ResultVal<void*> GetConfigInfoBlockPointer(u32 block_id, u32 size, u32 fl
     return MakeResult<void*>(pointer);
 }
 
+/// Checks if the language is available in the chosen region, and returns a proper one
+static u8 AdjustLanguageInfoBlock(u32 region, u8 language) {
+    static const std::array<std::vector<u8>, 7> region_languages{{
+        // JPN
+        {LANGUAGE_JP},
+        // USA
+        {LANGUAGE_EN, LANGUAGE_FR, LANGUAGE_ES, LANGUAGE_PT},
+        // EUR
+        {LANGUAGE_EN, LANGUAGE_FR, LANGUAGE_DE, LANGUAGE_IT, LANGUAGE_ES, LANGUAGE_NL, LANGUAGE_PT,
+         LANGUAGE_RU},
+        // AUS
+        {LANGUAGE_EN, LANGUAGE_FR, LANGUAGE_DE, LANGUAGE_IT, LANGUAGE_ES, LANGUAGE_NL, LANGUAGE_PT,
+         LANGUAGE_RU},
+        // CHN
+        {LANGUAGE_ZH},
+        // KOR
+        {LANGUAGE_KO},
+        // TWN
+        {LANGUAGE_TW},
+    }};
+    const auto& available = region_languages[region];
+    if (std::find(available.begin(), available.end(), language) == available.end()) {
+        return available[0];
+    }
+    return language;
+}
+
 ResultCode GetConfigInfoBlock(u32 block_id, u32 size, u32 flag, void* output) {
     void* pointer;
     CASCADE_RESULT(pointer, GetConfigInfoBlockPointer(block_id, size, flag));
     memcpy(output, pointer, size);
+
+    // override the language setting if the region setting is auto
+    if (block_id == LanguageBlockID &&
+        Settings::values.region_value == Settings::REGION_VALUE_AUTO_SELECT) {
+        u8 language;
+        memcpy(&language, output, sizeof(u8));
+        language = AdjustLanguageInfoBlock(preferred_region_code, language);
+        memcpy(output, &language, sizeof(u8));
+    }
+
     return RESULT_SUCCESS;
 }
 
@@ -359,7 +407,7 @@ ResultCode CreateConfigInfoBlk(u32 block_id, u16 size, u16 flags, const void* da
 }
 
 ResultCode DeleteConfigNANDSaveFile() {
-    FileSys::Path path("config");
+    FileSys::Path path("/config");
     return Service::FS::DeleteFileFromArchive(cfg_system_save_data_archive, path);
 }
 
@@ -368,7 +416,7 @@ ResultCode UpdateConfigNANDSavegame() {
     mode.write_flag.Assign(1);
     mode.create_flag.Assign(1);
 
-    FileSys::Path path("config");
+    FileSys::Path path("/config");
 
     auto config_result = Service::FS::OpenFileFromArchive(cfg_system_save_data_archive, path, mode);
     ASSERT_MSG(config_result.Succeeded(), "could not open file");
@@ -382,8 +430,9 @@ ResultCode UpdateConfigNANDSavegame() {
 ResultCode FormatConfig() {
     ResultCode res = DeleteConfigNANDSaveFile();
     // The delete command fails if the file doesn't exist, so we have to check that too
-    if (!res.IsSuccess() && res.description != ErrorDescription::FS_NotFound)
+    if (!res.IsSuccess() && res.description != ErrorDescription::FS_FileNotFound) {
         return res;
+    }
     // Delete the old data
     cfg_config_file_buffer.fill(0);
     // Create the header
@@ -409,7 +458,12 @@ ResultCode FormatConfig() {
     if (!res.IsSuccess())
         return res;
 
-    res = CreateConfigInfoBlk(ConsoleUniqueIDBlockID, sizeof(CONSOLE_UNIQUE_ID), 0xE,
+    res = CreateConfigInfoBlk(ConsoleUniqueID1BlockID, sizeof(CONSOLE_UNIQUE_ID), 0xE,
+                              &CONSOLE_UNIQUE_ID);
+    if (!res.IsSuccess())
+        return res;
+
+    res = CreateConfigInfoBlk(ConsoleUniqueID2BlockID, sizeof(CONSOLE_UNIQUE_ID), 0xE,
                               &CONSOLE_UNIQUE_ID);
     if (!res.IsSuccess())
         return res;
@@ -504,7 +558,7 @@ ResultCode LoadConfigNANDSaveFile() {
 
     cfg_system_save_data_archive = *archive_result;
 
-    FileSys::Path config_path("config");
+    FileSys::Path config_path("/config");
     FileSys::Mode open_mode = {};
     open_mode.read_flag.Assign(1);
 
@@ -521,14 +575,22 @@ ResultCode LoadConfigNANDSaveFile() {
 }
 
 void Init() {
-    AddService(new CFG_I_Interface);
-    AddService(new CFG_S_Interface);
-    AddService(new CFG_U_Interface);
+    AddService(new CFG_I);
+    AddService(new CFG_NOR);
+    AddService(new CFG_S);
+    AddService(new CFG_U);
 
     LoadConfigNANDSaveFile();
+
+    preferred_region_code = 0;
 }
 
 void Shutdown() {}
+
+void SetPreferredRegionCode(u32 region_code) {
+    preferred_region_code = region_code;
+    LOG_INFO(Service_CFG, "Preferred region code set to %u", preferred_region_code);
+}
 
 void SetUsername(const std::u16string& name) {
     ASSERT(name.size() <= 10);

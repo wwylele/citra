@@ -23,9 +23,9 @@ static constexpr u64 audio_frame_ticks = 1310252ull; ///< Units: ARM11 cycles
 static void AudioTickCallback(u64 /*userdata*/, int cycles_late) {
     if (DSP::HLE::Tick()) {
         // TODO(merry): Signal all the other interrupts as appropriate.
-        DSP_DSP::SignalPipeInterrupt(DSP::HLE::DspPipe::Audio);
+        Service::DSP_DSP::SignalPipeInterrupt(DSP::HLE::DspPipe::Audio);
         // HACK(merry): Added to prevent regressions. Will remove soon.
-        DSP_DSP::SignalPipeInterrupt(DSP::HLE::DspPipe::Binary);
+        Service::DSP_DSP::SignalPipeInterrupt(DSP::HLE::DspPipe::Binary);
     }
 
     // Reschedule recurrent event
@@ -56,22 +56,17 @@ void AddAddressSpace(Kernel::VMManager& address_space) {
 }
 
 void SelectSink(std::string sink_id) {
-    if (sink_id == "auto") {
-        // Auto-select.
-        // g_sink_details is ordered in terms of desirability, with the best choice at the front.
-        const auto& sink_detail = g_sink_details.front();
-        DSP::HLE::SetSink(sink_detail.factory());
-        return;
-    }
-
     auto iter =
         std::find_if(g_sink_details.begin(), g_sink_details.end(),
                      [sink_id](const auto& sink_detail) { return sink_detail.id == sink_id; });
 
-    if (iter == g_sink_details.end()) {
-        LOG_ERROR(Audio, "AudioCore::SelectSink given invalid sink_id");
-        DSP::HLE::SetSink(std::make_unique<NullSink>());
-        return;
+    if (sink_id == "auto" || iter == g_sink_details.end()) {
+        if (sink_id != "auto") {
+            LOG_ERROR(Audio, "AudioCore::SelectSink given invalid sink_id %s", sink_id.c_str());
+        }
+        // Auto-select.
+        // g_sink_details is ordered in terms of desirability, with the best choice at the front.
+        iter = g_sink_details.begin();
     }
 
     DSP::HLE::SetSink(iter->factory());

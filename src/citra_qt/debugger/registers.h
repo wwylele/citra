@@ -2,6 +2,8 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#pragma once
+
 #include <QDockWidget>
 #include "ui_registers.h"
 
@@ -13,7 +15,7 @@ class RegistersWidget : public QDockWidget {
     Q_OBJECT
 
 public:
-    RegistersWidget(QWidget* parent = nullptr);
+    explicit RegistersWidget(QWidget* parent = nullptr);
 
 public slots:
     void OnDebugModeEntered();

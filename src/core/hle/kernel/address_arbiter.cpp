@@ -4,7 +4,6 @@
 
 #include "common/common_types.h"
 #include "common/logging/log.h"
-#include "core/hle/hle.h"
 #include "core/hle/kernel/address_arbiter.h"
 #include "core/hle/kernel/thread.h"
 #include "core/memory.h"
@@ -78,8 +77,6 @@ ResultCode AddressArbiter::ArbitrateAddress(ArbitrationType type, VAddr address,
         return ResultCode(ErrorDescription::InvalidEnumValue, ErrorModule::Kernel,
                           ErrorSummary::WrongArgument, ErrorLevel::Usage);
     }
-
-    HLE::Reschedule(__func__);
 
     // The calls that use a timeout seem to always return a Timeout error even if they did not put
     // the thread to sleep

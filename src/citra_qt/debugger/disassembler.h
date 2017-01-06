@@ -17,7 +17,7 @@ class DisassemblerModel : public QAbstractListModel {
     Q_OBJECT
 
 public:
-    DisassemblerModel(QObject* parent);
+    explicit DisassemblerModel(QObject* parent);
 
     int columnCount(const QModelIndex& parent = QModelIndex()) const override;
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
@@ -38,9 +38,7 @@ private:
     unsigned int program_counter;
 
     QModelIndex selection;
-
-    // TODO: Make BreakPoints less crappy (i.e. const-correct) so that this needn't be mutable.
-    mutable BreakPoints breakpoints;
+    BreakPoints breakpoints;
 };
 
 class DisassemblerWidget : public QDockWidget {

@@ -3,10 +3,9 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/scm_rev.cpp.in" "${CMAKE_CURRENT_SOU
 
 set(SRCS
             break_points.cpp
-            emu_window.cpp
             file_util.cpp
+            framebuffer_layout.cpp
             hash.cpp
-            key_map.cpp
             logging/filter.cpp
             logging/text_formatter.cpp
             logging/backend.cpp
@@ -33,10 +32,9 @@ set(HEADERS
             common_funcs.h
             common_paths.h
             common_types.h
-            emu_window.h
             file_util.h
+            framebuffer_layout.h
             hash.h
-            key_map.h
             linear_disk_cache.h
             logging/text_formatter.h
             logging/filter.h
@@ -69,9 +67,15 @@ if(ARCHITECTURE_x86_64)
     set(HEADERS ${HEADERS}
             x64/abi.h
             x64/cpu_detect.h
-            x64/emitter.h)
+            x64/emitter.h
+            x64/xbyak_abi.h
+            x64/xbyak_util.h
+            )
 endif()
 
 create_directory_groups(${SRCS} ${HEADERS})
 
 add_library(common STATIC ${SRCS} ${HEADERS})
+if (ARCHITECTURE_x86_64)
+    target_link_libraries(common xbyak)
+endif()

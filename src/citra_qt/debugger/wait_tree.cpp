@@ -8,7 +8,6 @@
 #include "core/hle/kernel/event.h"
 #include "core/hle/kernel/mutex.h"
 #include "core/hle/kernel/semaphore.h"
-#include "core/hle/kernel/session.h"
 #include "core/hle/kernel/thread.h"
 #include "core/hle/kernel/timer.h"
 
@@ -230,7 +229,8 @@ std::vector<std::unique_ptr<WaitTreeItem>> WaitTreeThread::GetChildren() const {
         list.push_back(std::make_unique<WaitTreeMutexList>(thread.held_mutexes));
     }
     if (thread.status == THREADSTATUS_WAIT_SYNCH) {
-        list.push_back(std::make_unique<WaitTreeObjectList>(thread.wait_objects, thread.wait_all));
+        list.push_back(std::make_unique<WaitTreeObjectList>(thread.wait_objects,
+                                                            thread.IsSleepingOnWaitAll()));
     }
 
     return list;
@@ -391,7 +391,7 @@ WaitTreeWidget::WaitTreeWidget(QWidget* parent) : QDockWidget(tr("Wait Tree"), p
 }
 
 void WaitTreeWidget::OnDebugModeEntered() {
-    if (!Core::g_app_core)
+    if (!Core::System::GetInstance().IsPoweredOn())
         return;
     model->InitItems();
     view->setModel(model);

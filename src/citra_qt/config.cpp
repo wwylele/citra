@@ -39,7 +39,6 @@ void Config::ReadValues() {
 
     qt_config->beginGroup("Core");
     Settings::values.use_cpu_jit = qt_config->value("use_cpu_jit", true).toBool();
-    Settings::values.frame_skip = qt_config->value("frame_skip", 0).toInt();
     qt_config->endGroup();
 
     qt_config->beginGroup("Renderer");
@@ -48,10 +47,17 @@ void Config::ReadValues() {
     Settings::values.use_scaled_resolution =
         qt_config->value("use_scaled_resolution", false).toBool();
     Settings::values.use_vsync = qt_config->value("use_vsync", false).toBool();
+    Settings::values.toggle_framelimit = qt_config->value("toggle_framelimit", true).toBool();
 
     Settings::values.bg_red = qt_config->value("bg_red", 1.0).toFloat();
     Settings::values.bg_green = qt_config->value("bg_green", 1.0).toFloat();
     Settings::values.bg_blue = qt_config->value("bg_blue", 1.0).toFloat();
+    qt_config->endGroup();
+
+    qt_config->beginGroup("Layout");
+    Settings::values.layout_option =
+        static_cast<Settings::LayoutOption>(qt_config->value("layout_option").toInt());
+    Settings::values.swap_screen = qt_config->value("swap_screen", false).toBool();
     qt_config->endGroup();
 
     qt_config->beginGroup("Audio");
@@ -66,7 +72,8 @@ void Config::ReadValues() {
 
     qt_config->beginGroup("System");
     Settings::values.is_new_3ds = qt_config->value("is_new_3ds", false).toBool();
-    Settings::values.region_value = qt_config->value("region_value", 1).toInt();
+    Settings::values.region_value =
+        qt_config->value("region_value", Settings::REGION_VALUE_AUTO_SELECT).toInt();
     qt_config->endGroup();
 
     qt_config->beginGroup("Miscellaneous");
@@ -140,7 +147,6 @@ void Config::SaveValues() {
 
     qt_config->beginGroup("Core");
     qt_config->setValue("use_cpu_jit", Settings::values.use_cpu_jit);
-    qt_config->setValue("frame_skip", Settings::values.frame_skip);
     qt_config->endGroup();
 
     qt_config->beginGroup("Renderer");
@@ -148,11 +154,17 @@ void Config::SaveValues() {
     qt_config->setValue("use_shader_jit", Settings::values.use_shader_jit);
     qt_config->setValue("use_scaled_resolution", Settings::values.use_scaled_resolution);
     qt_config->setValue("use_vsync", Settings::values.use_vsync);
+    qt_config->setValue("toggle_framelimit", Settings::values.toggle_framelimit);
 
     // Cast to double because Qt's written float values are not human-readable
     qt_config->setValue("bg_red", (double)Settings::values.bg_red);
     qt_config->setValue("bg_green", (double)Settings::values.bg_green);
     qt_config->setValue("bg_blue", (double)Settings::values.bg_blue);
+    qt_config->endGroup();
+
+    qt_config->beginGroup("Layout");
+    qt_config->setValue("layout_option", static_cast<int>(Settings::values.layout_option));
+    qt_config->setValue("swap_screen", Settings::values.swap_screen);
     qt_config->endGroup();
 
     qt_config->beginGroup("Audio");

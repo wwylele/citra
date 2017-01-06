@@ -4,10 +4,8 @@
 
 #include "core/hle/service/http_c.h"
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// Namespace HTTP_C
-
-namespace HTTP_C {
+namespace Service {
+namespace HTTP {
 
 const Interface::FunctionInfo FunctionTable[] = {
     {0x00010044, nullptr, "Initialize"},
@@ -55,6 +53,10 @@ const Interface::FunctionInfo FunctionTable[] = {
     {0x002E0040, nullptr, "DestroyRootCertChain"},
     {0x002F0082, nullptr, "RootCertChainAddCert"},
     {0x00300080, nullptr, "RootCertChainAddDefaultCert"},
+    {0x00310080, nullptr, "RootCertChainRemoveCert"},
+    {0x00320084, nullptr, "OpenClientCertContext"},
+    {0x00330040, nullptr, "OpenDefaultClientCertContext"},
+    {0x00340040, nullptr, "CloseClientCertContext"},
     {0x00350186, nullptr, "SetDefaultProxy"},
     {0x00360000, nullptr, "ClearDNSCache"},
     {0x00370080, nullptr, "SetKeepAlive"},
@@ -62,11 +64,9 @@ const Interface::FunctionInfo FunctionTable[] = {
     {0x00390000, nullptr, "Finalize"},
 };
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// Interface class
-
-Interface::Interface() {
+HTTP_C::HTTP_C() {
     Register(FunctionTable);
 }
 
-} // namespace
+} // namespace HTTP
+} // namespace Service

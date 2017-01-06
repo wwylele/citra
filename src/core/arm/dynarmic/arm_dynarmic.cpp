@@ -2,6 +2,7 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include <cstring>
 #include <dynarmic/dynarmic.h>
 #include "common/assert.h"
 #include "common/microprofile.h"
@@ -44,6 +45,7 @@ static Dynarmic::UserCallbacks GetUserCallbacks(ARMul_State* interpeter_state) {
     user_callbacks.user_arg = static_cast<void*>(interpeter_state);
     user_callbacks.CallSVC = &SVC::CallSVC;
     user_callbacks.IsReadOnlyMemory = &IsReadOnlyMemory;
+    user_callbacks.MemoryReadCode = &Memory::Read32;
     user_callbacks.MemoryRead8 = &Memory::Read8;
     user_callbacks.MemoryRead16 = &Memory::Read16;
     user_callbacks.MemoryRead32 = &Memory::Read32;
@@ -52,6 +54,7 @@ static Dynarmic::UserCallbacks GetUserCallbacks(ARMul_State* interpeter_state) {
     user_callbacks.MemoryWrite16 = &Memory::Write16;
     user_callbacks.MemoryWrite32 = &Memory::Write32;
     user_callbacks.MemoryWrite64 = &Memory::Write64;
+    user_callbacks.page_table = Memory::GetCurrentPageTablePointers();
     return user_callbacks;
 }
 
@@ -130,12 +133,12 @@ MICROPROFILE_DEFINE(ARM_Jit, "ARM JIT", "ARM JIT", MP_RGB(255, 64, 64));
 void ARM_Dynarmic::ExecuteInstructions(int num_instructions) {
     MICROPROFILE_SCOPE(ARM_Jit);
 
-    jit->Run(static_cast<unsigned>(num_instructions));
+    unsigned ticks_executed = jit->Run(static_cast<unsigned>(num_instructions));
 
-    AddTicks(num_instructions);
+    AddTicks(ticks_executed);
 }
 
-void ARM_Dynarmic::SaveContext(Core::ThreadContext& ctx) {
+void ARM_Dynarmic::SaveContext(ARM_Interface::ThreadContext& ctx) {
     memcpy(ctx.cpu_registers, jit->Regs().data(), sizeof(ctx.cpu_registers));
     memcpy(ctx.fpu_registers, jit->ExtRegs().data(), sizeof(ctx.fpu_registers));
 
@@ -148,7 +151,7 @@ void ARM_Dynarmic::SaveContext(Core::ThreadContext& ctx) {
     ctx.fpexc = interpreter_state->VFP[VFP_FPEXC];
 }
 
-void ARM_Dynarmic::LoadContext(const Core::ThreadContext& ctx) {
+void ARM_Dynarmic::LoadContext(const ARM_Interface::ThreadContext& ctx) {
     memcpy(jit->Regs().data(), ctx.cpu_registers, sizeof(ctx.cpu_registers));
     memcpy(jit->ExtRegs().data(), ctx.fpu_registers, sizeof(ctx.fpu_registers));
 

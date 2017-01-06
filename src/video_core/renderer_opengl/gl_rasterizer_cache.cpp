@@ -11,11 +11,11 @@
 #include <vector>
 #include <glad/glad.h>
 #include "common/bit_field.h"
-#include "common/emu_window.h"
 #include "common/logging/log.h"
 #include "common/math_util.h"
 #include "common/microprofile.h"
 #include "common/vector_math.h"
+#include "core/frontend/emu_window.h"
 #include "core/memory.h"
 #include "video_core/debug_utils/debug_utils.h"
 #include "video_core/pica_state.h"
@@ -103,7 +103,7 @@ static void MortonCopyPixels(CachedSurface::PixelFormat pixel_format, u32 width,
     }
 }
 
-bool RasterizerCacheOpenGL::BlitTextures(GLuint src_tex, GLuint dst_tex,
+void RasterizerCacheOpenGL::BlitTextures(GLuint src_tex, GLuint dst_tex,
                                          CachedSurface::SurfaceType type,
                                          const MathUtil::Rectangle<int>& src_rect,
                                          const MathUtil::Rectangle<int>& dst_rect) {
@@ -158,14 +158,6 @@ bool RasterizerCacheOpenGL::BlitTextures(GLuint src_tex, GLuint dst_tex,
         buffers = GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
     }
 
-    if (OpenGLState::CheckFBStatus(GL_READ_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        return false;
-    }
-
-    if (OpenGLState::CheckFBStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        return false;
-    }
-
     glBlitFramebuffer(src_rect.left, src_rect.top, src_rect.right, src_rect.bottom, dst_rect.left,
                       dst_rect.top, dst_rect.right, dst_rect.bottom, buffers,
                       buffers == GL_COLOR_BUFFER_BIT ? GL_LINEAR : GL_NEAREST);
@@ -174,8 +166,6 @@ bool RasterizerCacheOpenGL::BlitTextures(GLuint src_tex, GLuint dst_tex,
     cur_state.draw.read_framebuffer = old_fbs[0];
     cur_state.draw.draw_framebuffer = old_fbs[1];
     cur_state.Apply();
-
-    return true;
 }
 
 bool RasterizerCacheOpenGL::TryBlitSurfaces(CachedSurface* src_surface,
@@ -189,9 +179,9 @@ bool RasterizerCacheOpenGL::TryBlitSurfaces(CachedSurface* src_surface,
         return false;
     }
 
-    return BlitTextures(src_surface->texture.handle, dst_surface->texture.handle,
-                        CachedSurface::GetFormatType(src_surface->pixel_format), src_rect,
-                        dst_rect);
+    BlitTextures(src_surface->texture.handle, dst_surface->texture.handle,
+                 CachedSurface::GetFormatType(src_surface->pixel_format), src_rect, dst_rect);
+    return true;
 }
 
 static void AllocateSurfaceTexture(GLuint texture, CachedSurface::PixelFormat pixel_format,
@@ -291,6 +281,9 @@ CachedSurface* RasterizerCacheOpenGL::GetSurface(const CachedSurface& params, bo
 
     MICROPROFILE_SCOPE(OpenGL_SurfaceUpload);
 
+    // Stride only applies to linear images.
+    ASSERT(params.pixel_stride == 0 || !params.is_tiled);
+
     std::shared_ptr<CachedSurface> new_surface = std::make_shared<CachedSurface>();
 
     new_surface->addr = params.addr;
@@ -299,7 +292,7 @@ CachedSurface* RasterizerCacheOpenGL::GetSurface(const CachedSurface& params, bo
     new_surface->texture.Create();
     new_surface->width = params.width;
     new_surface->height = params.height;
-    new_surface->stride = params.stride;
+    new_surface->pixel_stride = params.pixel_stride;
     new_surface->res_scale_width = params.res_scale_width;
     new_surface->res_scale_height = params.res_scale_height;
 
@@ -325,14 +318,15 @@ CachedSurface* RasterizerCacheOpenGL::GetSurface(const CachedSurface& params, bo
         cur_state.Apply();
         glActiveTexture(GL_TEXTURE0);
 
-        glPixelStorei(GL_UNPACK_ROW_LENGTH, (GLint)new_surface->stride);
         if (!new_surface->is_tiled) {
             // TODO: Ensure this will always be a color format, not a depth or other format
             ASSERT((size_t)new_surface->pixel_format < fb_format_tuples.size());
             const FormatTuple& tuple = fb_format_tuples[(unsigned int)params.pixel_format];
 
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, (GLint)new_surface->pixel_stride);
             glTexImage2D(GL_TEXTURE_2D, 0, tuple.internal_format, params.width, params.height, 0,
                          tuple.format, tuple.type, texture_src_data);
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
         } else {
             SurfaceType type = CachedSurface::GetFormatType(new_surface->pixel_format);
             if (type != SurfaceType::Depth && type != SurfaceType::DepthStencil) {
@@ -391,7 +385,6 @@ CachedSurface* RasterizerCacheOpenGL::GetSurface(const CachedSurface& params, bo
                              0, tuple.format, tuple.type, temp_fb_depth_buffer.data());
             }
         }
-        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 
         // If not 1x scale, blit 1x texture to a new scaled texture and replace texture in surface
         if (new_surface->res_scale_width != 1.f || new_surface->res_scale_height != 1.f) {
@@ -701,13 +694,14 @@ void RasterizerCacheOpenGL::FlushSurface(CachedSurface* surface) {
     cur_state.Apply();
     glActiveTexture(GL_TEXTURE0);
 
-    glPixelStorei(GL_PACK_ROW_LENGTH, (GLint)surface->stride);
     if (!surface->is_tiled) {
         // TODO: Ensure this will always be a color format, not a depth or other format
         ASSERT((size_t)surface->pixel_format < fb_format_tuples.size());
         const FormatTuple& tuple = fb_format_tuples[(unsigned int)surface->pixel_format];
 
+        glPixelStorei(GL_PACK_ROW_LENGTH, (GLint)surface->pixel_stride);
         glGetTexImage(GL_TEXTURE_2D, 0, tuple.format, tuple.type, dst_buffer);
+        glPixelStorei(GL_PACK_ROW_LENGTH, 0);
     } else {
         SurfaceType type = CachedSurface::GetFormatType(surface->pixel_format);
         if (type != SurfaceType::Depth && type != SurfaceType::DepthStencil) {
@@ -750,7 +744,6 @@ void RasterizerCacheOpenGL::FlushSurface(CachedSurface* surface) {
                              false);
         }
     }
-    glPixelStorei(GL_PACK_ROW_LENGTH, 0);
 
     surface->dirty = false;
 

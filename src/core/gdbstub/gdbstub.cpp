@@ -5,6 +5,7 @@
 // Originally written by Sven Peter <sven@fail0verflow.com> for anergistic.
 
 #include <algorithm>
+#include <atomic>
 #include <climits>
 #include <csignal>
 #include <cstdarg>
@@ -14,9 +15,9 @@
 #include <numeric>
 #include <fcntl.h>
 
-#ifdef _MSC_VER
-#include <WinSock2.h>
-#include <common/x64/abi.h>
+#ifdef _WIN32
+#include <winsock2.h>
+// winsock2.h needs to be included first to prevent winsock.h being included by other includes
 #include <io.h>
 #include <iphlpapi.h>
 #include <ws2tcpip.h>
@@ -34,6 +35,7 @@
 #include "core/arm/arm_interface.h"
 #include "core/core.h"
 #include "core/gdbstub/gdbstub.h"
+#include "core/loader/loader.h"
 #include "core/memory.h"
 
 const int GDB_BUFFER_SIZE = 10000;
@@ -130,7 +132,10 @@ static u16 gdbstub_port = 24689;
 
 static bool halt_loop = true;
 static bool step_loop = false;
-std::atomic<bool> g_server_enabled(false);
+
+// If set to false, the server will never be started and no
+// gdbstub-related functions will be executed.
+static std::atomic<bool> server_enabled(false);
 
 #ifdef _WIN32
 WSADATA InitData;
@@ -181,11 +186,10 @@ static u8 NibbleToHex(u8 n) {
 /**
 * Converts input hex string characters into an array of equivalent of u8 bytes.
 *
-* @param dest Pointer to buffer to store u8 bytes.
 * @param src Pointer to array of output hex string characters.
 * @param len Length of src array.
 */
-static u32 HexToInt(u8* src, u32 len) {
+static u32 HexToInt(const u8* src, size_t len) {
     u32 output = 0;
     while (len-- > 0) {
         output = (output << 4) | HexCharToValue(src[0]);
@@ -201,7 +205,7 @@ static u32 HexToInt(u8* src, u32 len) {
  * @param src Pointer to array of u8 bytes.
  * @param len Length of src array.
  */
-static void MemToGdbHex(u8* dest, u8* src, u32 len) {
+static void MemToGdbHex(u8* dest, const u8* src, size_t len) {
     while (len-- > 0) {
         u8 tmp = *src++;
         *dest++ = NibbleToHex(tmp >> 4);
@@ -216,7 +220,7 @@ static void MemToGdbHex(u8* dest, u8* src, u32 len) {
  * @param src Pointer to array of output hex string characters.
  * @param len Length of src array.
  */
-static void GdbHexToMem(u8* dest, u8* src, u32 len) {
+static void GdbHexToMem(u8* dest, const u8* src, size_t len) {
     while (len-- > 0) {
         *dest++ = (HexCharToValue(src[0]) << 4) | HexCharToValue(src[1]);
         src += 2;
@@ -240,7 +244,7 @@ static void IntToGdbHex(u8* dest, u32 v) {
  *
  * @param src Pointer to hex string.
  */
-static u32 GdbHexToInt(u8* src) {
+static u32 GdbHexToInt(const u8* src) {
     u32 output = 0;
 
     for (int i = 0; i < 8; i += 2) {
@@ -264,7 +268,7 @@ static u8 ReadByte() {
 }
 
 /// Calculate the checksum of the current command buffer.
-static u8 CalculateChecksum(u8* buffer, u32 length) {
+static u8 CalculateChecksum(const u8* buffer, size_t length) {
     return static_cast<u8>(std::accumulate(buffer, buffer + length, 0, std::plus<u8>()));
 }
 
@@ -446,9 +450,9 @@ static void SendSignal(u32 signal) {
 
     latest_signal = signal;
 
-    std::string buffer = Common::StringFromFormat("T%02x%02x:%08x;%02x:%08x;", latest_signal, 15,
-                                                  htonl(Core::g_app_core->GetPC()), 13,
-                                                  htonl(Core::g_app_core->GetReg(13)));
+    std::string buffer =
+        Common::StringFromFormat("T%02x%02x:%08x;%02x:%08x;", latest_signal, 15,
+                                 htonl(Core::CPU().GetPC()), 13, htonl(Core::CPU().GetReg(13)));
     LOG_DEBUG(Debug_GDBStub, "Response: %s", buffer.c_str());
     SendReply(buffer.c_str());
 }
@@ -535,15 +539,15 @@ static void ReadRegister() {
     }
 
     if (id <= R15_REGISTER) {
-        IntToGdbHex(reply, Core::g_app_core->GetReg(id));
+        IntToGdbHex(reply, Core::CPU().GetReg(id));
     } else if (id == CPSR_REGISTER) {
-        IntToGdbHex(reply, Core::g_app_core->GetCPSR());
+        IntToGdbHex(reply, Core::CPU().GetCPSR());
     } else if (id > CPSR_REGISTER && id < FPSCR_REGISTER) {
-        IntToGdbHex(reply, Core::g_app_core->GetVFPReg(
+        IntToGdbHex(reply, Core::CPU().GetVFPReg(
                                id - CPSR_REGISTER -
                                1)); // VFP registers should start at 26, so one after CSPR_REGISTER
     } else if (id == FPSCR_REGISTER) {
-        IntToGdbHex(reply, Core::g_app_core->GetVFPSystemReg(VFP_FPSCR)); // Get FPSCR
+        IntToGdbHex(reply, Core::CPU().GetVFPSystemReg(VFP_FPSCR)); // Get FPSCR
         IntToGdbHex(reply + 8, 0);
     } else {
         return SendReply("E01");
@@ -560,29 +564,29 @@ static void ReadRegisters() {
     u8* bufptr = buffer;
 
     for (int reg = 0; reg <= R15_REGISTER; reg++) {
-        IntToGdbHex(bufptr + reg * CHAR_BIT, Core::g_app_core->GetReg(reg));
+        IntToGdbHex(bufptr + reg * CHAR_BIT, Core::CPU().GetReg(reg));
     }
 
     bufptr += (16 * CHAR_BIT);
 
-    IntToGdbHex(bufptr, Core::g_app_core->GetCPSR());
+    IntToGdbHex(bufptr, Core::CPU().GetCPSR());
 
     bufptr += CHAR_BIT;
 
     for (int reg = 0; reg <= 31; reg++) {
-        IntToGdbHex(bufptr + reg * CHAR_BIT, Core::g_app_core->GetVFPReg(reg));
+        IntToGdbHex(bufptr + reg * CHAR_BIT, Core::CPU().GetVFPReg(reg));
     }
 
     bufptr += (32 * CHAR_BIT);
 
-    IntToGdbHex(bufptr, Core::g_app_core->GetVFPSystemReg(VFP_FPSCR));
+    IntToGdbHex(bufptr, Core::CPU().GetVFPSystemReg(VFP_FPSCR));
 
     SendReply(reinterpret_cast<char*>(buffer));
 }
 
 /// Modify data of register specified by gdb client.
 static void WriteRegister() {
-    u8* buffer_ptr = command_buffer + 3;
+    const u8* buffer_ptr = command_buffer + 3;
 
     u32 id = HexCharToValue(command_buffer[1]);
     if (command_buffer[2] != '=') {
@@ -592,13 +596,13 @@ static void WriteRegister() {
     }
 
     if (id <= R15_REGISTER) {
-        Core::g_app_core->SetReg(id, GdbHexToInt(buffer_ptr));
+        Core::CPU().SetReg(id, GdbHexToInt(buffer_ptr));
     } else if (id == CPSR_REGISTER) {
-        Core::g_app_core->SetCPSR(GdbHexToInt(buffer_ptr));
+        Core::CPU().SetCPSR(GdbHexToInt(buffer_ptr));
     } else if (id > CPSR_REGISTER && id < FPSCR_REGISTER) {
-        Core::g_app_core->SetVFPReg(id - CPSR_REGISTER - 1, GdbHexToInt(buffer_ptr));
+        Core::CPU().SetVFPReg(id - CPSR_REGISTER - 1, GdbHexToInt(buffer_ptr));
     } else if (id == FPSCR_REGISTER) {
-        Core::g_app_core->SetVFPSystemReg(VFP_FPSCR, GdbHexToInt(buffer_ptr));
+        Core::CPU().SetVFPSystemReg(VFP_FPSCR, GdbHexToInt(buffer_ptr));
     } else {
         return SendReply("E01");
     }
@@ -608,27 +612,26 @@ static void WriteRegister() {
 
 /// Modify all registers with data received from the client.
 static void WriteRegisters() {
-    u8* buffer_ptr = command_buffer + 1;
+    const u8* buffer_ptr = command_buffer + 1;
 
     if (command_buffer[0] != 'G')
         return SendReply("E01");
 
     for (int i = 0, reg = 0; reg <= FPSCR_REGISTER; i++, reg++) {
         if (reg <= R15_REGISTER) {
-            Core::g_app_core->SetReg(reg, GdbHexToInt(buffer_ptr + i * CHAR_BIT));
+            Core::CPU().SetReg(reg, GdbHexToInt(buffer_ptr + i * CHAR_BIT));
         } else if (reg == CPSR_REGISTER) {
-            Core::g_app_core->SetCPSR(GdbHexToInt(buffer_ptr + i * CHAR_BIT));
+            Core::CPU().SetCPSR(GdbHexToInt(buffer_ptr + i * CHAR_BIT));
         } else if (reg == CPSR_REGISTER - 1) {
             // Dummy FPA register, ignore
         } else if (reg < CPSR_REGISTER) {
             // Dummy FPA registers, ignore
             i += 2;
         } else if (reg > CPSR_REGISTER && reg < FPSCR_REGISTER) {
-            Core::g_app_core->SetVFPReg(reg - CPSR_REGISTER - 1,
-                                        GdbHexToInt(buffer_ptr + i * CHAR_BIT));
+            Core::CPU().SetVFPReg(reg - CPSR_REGISTER - 1, GdbHexToInt(buffer_ptr + i * CHAR_BIT));
             i++; // Skip padding
         } else if (reg == FPSCR_REGISTER) {
-            Core::g_app_core->SetVFPSystemReg(VFP_FPSCR, GdbHexToInt(buffer_ptr + i * CHAR_BIT));
+            Core::CPU().SetVFPSystemReg(VFP_FPSCR, GdbHexToInt(buffer_ptr + i * CHAR_BIT));
         }
     }
 
@@ -653,7 +656,7 @@ static void ReadMemory() {
         SendReply("E01");
     }
 
-    u8* data = Memory::GetPointer(addr);
+    const u8* data = Memory::GetPointer(addr);
     if (!data) {
         return SendReply("E00");
     }
@@ -902,10 +905,10 @@ void SetServerPort(u16 port) {
 
 void ToggleServer(bool status) {
     if (status) {
-        g_server_enabled = status;
+        server_enabled = status;
 
         // Start server
-        if (!IsConnected() && Core::g_sys_core != nullptr) {
+        if (!IsConnected() && Core::System().GetInstance().IsPoweredOn()) {
             Init();
         }
     } else {
@@ -914,12 +917,12 @@ void ToggleServer(bool status) {
             Shutdown();
         }
 
-        g_server_enabled = status;
+        server_enabled = status;
     }
 }
 
 static void Init(u16 port) {
-    if (!g_server_enabled) {
+    if (!server_enabled) {
         // Set the halt loop to false in case the user enabled the gdbstub mid-execution.
         // This way the CPU can still execute normally.
         halt_loop = false;
@@ -998,7 +1001,7 @@ void Init() {
 }
 
 void Shutdown() {
-    if (!g_server_enabled) {
+    if (!server_enabled) {
         return;
     }
 
@@ -1015,8 +1018,12 @@ void Shutdown() {
     LOG_INFO(Debug_GDBStub, "GDB stopped.");
 }
 
+bool IsServerEnabled() {
+    return server_enabled;
+}
+
 bool IsConnected() {
-    return g_server_enabled && gdbserver_socket != -1;
+    return IsServerEnabled() && gdbserver_socket != -1;
 }
 
 bool GetCpuHaltFlag() {

@@ -9,10 +9,10 @@
 #include <SDL.h>
 #include <glad/glad.h>
 #include "citra/emu_window/emu_window_sdl2.h"
-#include "common/key_map.h"
 #include "common/logging/log.h"
 #include "common/scm_rev.h"
 #include "common/string_util.h"
+#include "core/frontend/key_map.h"
 #include "core/hle/service/hid/hid.h"
 #include "core/settings.h"
 #include "video_core/video_core.h"
@@ -46,11 +46,8 @@ bool EmuWindow_SDL2::IsOpen() const {
 
 void EmuWindow_SDL2::OnResize() {
     int width, height;
-
     SDL_GetWindowSize(render_window, &width, &height);
-
-    NotifyFramebufferLayoutChanged(
-        EmuWindow::FramebufferLayout::DefaultScreenLayout(width, height));
+    UpdateCurrentFramebufferLayout(width, height);
 }
 
 EmuWindow_SDL2::EmuWindow_SDL2() {

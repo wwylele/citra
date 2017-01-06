@@ -2,6 +2,7 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include <cinttypes>
 #include <clocale>
 #include <memory>
 #include <thread>
@@ -16,12 +17,12 @@
 #include "citra_qt/configure_dialog.h"
 #include "citra_qt/debugger/callstack.h"
 #include "citra_qt/debugger/disassembler.h"
-#include "citra_qt/debugger/graphics.h"
-#include "citra_qt/debugger/graphics_breakpoints.h"
-#include "citra_qt/debugger/graphics_cmdlists.h"
-#include "citra_qt/debugger/graphics_surface.h"
-#include "citra_qt/debugger/graphics_tracing.h"
-#include "citra_qt/debugger/graphics_vertex_shader.h"
+#include "citra_qt/debugger/graphics/graphics.h"
+#include "citra_qt/debugger/graphics/graphics_breakpoints.h"
+#include "citra_qt/debugger/graphics/graphics_cmdlists.h"
+#include "citra_qt/debugger/graphics/graphics_surface.h"
+#include "citra_qt/debugger/graphics/graphics_tracing.h"
+#include "citra_qt/debugger/graphics/graphics_vertex_shader.h"
 #include "citra_qt/debugger/profiler.h"
 #include "citra_qt/debugger/ramview.h"
 #include "citra_qt/debugger/registers.h"
@@ -41,12 +42,16 @@
 #include "common/string_util.h"
 #include "core/arm/disassembler/load_symbol_map.h"
 #include "core/core.h"
+#include "core/file_sys/archive_source_sd_savedata.h"
 #include "core/gdbstub/gdbstub.h"
 #include "core/loader/loader.h"
 #include "core/settings.h"
-#include "core/system.h"
 #include "qhexedit.h"
 #include "video_core/video_core.h"
+
+#ifdef QT_STATICPLUGIN
+Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin);
+#endif
 
 GMainWindow::GMainWindow() : config(new Config()), emu_thread(nullptr) {
     Pica::g_debug_context = Pica::DebugContext::Construct();
@@ -54,6 +59,36 @@ GMainWindow::GMainWindow() : config(new Config()), emu_thread(nullptr) {
     ui.setupUi(this);
     statusBar()->hide();
 
+    InitializeWidgets();
+    InitializeDebugMenuActions();
+    InitializeRecentFileMenuActions();
+    InitializeHotkeys();
+
+    SetDefaultUIGeometry();
+    RestoreUIState();
+
+    ConnectWidgetEvents();
+
+    setWindowTitle(QString("Citra | %1-%2").arg(Common::g_scm_branch, Common::g_scm_desc));
+    show();
+
+    game_list->PopulateAsync(UISettings::values.gamedir, UISettings::values.gamedir_deepscan);
+
+    QStringList args = QApplication::arguments();
+    if (args.length() >= 2) {
+        BootGame(args[1].toStdString());
+    }
+}
+
+GMainWindow::~GMainWindow() {
+    // will get automatically deleted otherwise
+    if (render_window->parent() == nullptr)
+        delete render_window;
+
+    Pica::g_debug_context.reset();
+}
+
+void GMainWindow::InitializeWidgets() {
     render_window = new GRenderWindow(this, emu_thread.get());
     render_window->hide();
 
@@ -89,25 +124,27 @@ GMainWindow::GMainWindow() : config(new Config()), emu_thread(nullptr) {
     addDockWidget(Qt::RightDockWidgetArea, graphicsCommandsWidget);
     graphicsCommandsWidget->hide();
 
-    auto graphicsBreakpointsWidget = new GraphicsBreakPointsWidget(Pica::g_debug_context, this);
+    graphicsBreakpointsWidget = new GraphicsBreakPointsWidget(Pica::g_debug_context, this);
     addDockWidget(Qt::RightDockWidgetArea, graphicsBreakpointsWidget);
     graphicsBreakpointsWidget->hide();
 
-    auto graphicsVertexShaderWidget = new GraphicsVertexShaderWidget(Pica::g_debug_context, this);
+    graphicsVertexShaderWidget = new GraphicsVertexShaderWidget(Pica::g_debug_context, this);
     addDockWidget(Qt::RightDockWidgetArea, graphicsVertexShaderWidget);
     graphicsVertexShaderWidget->hide();
 
-    auto graphicsTracingWidget = new GraphicsTracingWidget(Pica::g_debug_context, this);
+    graphicsTracingWidget = new GraphicsTracingWidget(Pica::g_debug_context, this);
     addDockWidget(Qt::RightDockWidgetArea, graphicsTracingWidget);
     graphicsTracingWidget->hide();
-
-    auto graphicsSurfaceViewerAction = new QAction(tr("Create Pica Surface Viewer"), this);
-    connect(graphicsSurfaceViewerAction, SIGNAL(triggered()), this,
-            SLOT(OnCreateGraphicsSurfaceViewer()));
 
     waitTreeWidget = new WaitTreeWidget(this);
     addDockWidget(Qt::LeftDockWidgetArea, waitTreeWidget);
     waitTreeWidget->hide();
+}
+
+void GMainWindow::InitializeDebugMenuActions() {
+    auto graphicsSurfaceViewerAction = new QAction(tr("Create Pica Surface Viewer"), this);
+    connect(graphicsSurfaceViewerAction, SIGNAL(triggered()), this,
+            SLOT(OnCreateGraphicsSurfaceViewer()));
 
     QMenu* debug_menu = ui.menu_View->addMenu(tr("Debugging"));
     debug_menu->addAction(graphicsSurfaceViewerAction);
@@ -125,19 +162,47 @@ GMainWindow::GMainWindow() : config(new Config()), emu_thread(nullptr) {
     debug_menu->addAction(graphicsVertexShaderWidget->toggleViewAction());
     debug_menu->addAction(graphicsTracingWidget->toggleViewAction());
     debug_menu->addAction(waitTreeWidget->toggleViewAction());
+}
 
-    // Set default UI state
+void GMainWindow::InitializeRecentFileMenuActions() {
+    for (int i = 0; i < max_recent_files_item; ++i) {
+        actions_recent_files[i] = new QAction(this);
+        actions_recent_files[i]->setVisible(false);
+        connect(actions_recent_files[i], SIGNAL(triggered()), this, SLOT(OnMenuRecentFile()));
+
+        ui.menu_recent_files->addAction(actions_recent_files[i]);
+    }
+
+    UpdateRecentFiles();
+}
+
+void GMainWindow::InitializeHotkeys() {
+    RegisterHotkey("Main Window", "Load File", QKeySequence::Open);
+    RegisterHotkey("Main Window", "Swap Screens", QKeySequence::NextChild);
+    RegisterHotkey("Main Window", "Start Emulation");
+    LoadHotkeys();
+
+    connect(GetHotkey("Main Window", "Load File", this), SIGNAL(activated()), this,
+            SLOT(OnMenuLoadFile()));
+    connect(GetHotkey("Main Window", "Start Emulation", this), SIGNAL(activated()), this,
+            SLOT(OnStartGame()));
+    connect(GetHotkey("Main Window", "Swap Screens", render_window), SIGNAL(activated()), this,
+            SLOT(OnSwapScreens()));
+}
+
+void GMainWindow::SetDefaultUIGeometry() {
     // geometry: 55% of the window contents are in the upper screen half, 45% in the lower half
-    QDesktopWidget* desktop = ((QApplication*)QApplication::instance())->desktop();
-    QRect screenRect = desktop->screenGeometry(this);
-    int x, y, w, h;
-    w = screenRect.width() * 2 / 3;
-    h = screenRect.height() / 2;
-    x = (screenRect.x() + screenRect.width()) / 2 - w / 2;
-    y = (screenRect.y() + screenRect.height()) / 2 - h * 55 / 100;
-    setGeometry(x, y, w, h);
+    const QRect screenRect = QApplication::desktop()->screenGeometry(this);
 
-    // Restore UI state
+    const int w = screenRect.width() * 2 / 3;
+    const int h = screenRect.height() / 2;
+    const int x = (screenRect.x() + screenRect.width()) / 2 - w / 2;
+    const int y = (screenRect.y() + screenRect.height()) / 2 - h * 55 / 100;
+
+    setGeometry(x, y, w, h);
+}
+
+void GMainWindow::RestoreUIState() {
     restoreGeometry(UISettings::values.geometry);
     restoreState(UISettings::values.state);
     render_window->restoreGeometry(UISettings::values.renderwindow_geometry);
@@ -153,20 +218,13 @@ GMainWindow::GMainWindow() : config(new Config()), emu_thread(nullptr) {
 
     ui.actionDisplay_widget_title_bars->setChecked(UISettings::values.display_titlebar);
     OnDisplayTitleBars(ui.actionDisplay_widget_title_bars->isChecked());
+}
 
-    // Prepare actions for recent files
-    for (int i = 0; i < max_recent_files_item; ++i) {
-        actions_recent_files[i] = new QAction(this);
-        actions_recent_files[i]->setVisible(false);
-        connect(actions_recent_files[i], SIGNAL(triggered()), this, SLOT(OnMenuRecentFile()));
-
-        ui.menu_recent_files->addAction(actions_recent_files[i]);
-    }
-    UpdateRecentFiles();
-
-    // Setup connections
+void GMainWindow::ConnectWidgetEvents() {
     connect(game_list, SIGNAL(GameChosen(QString)), this, SLOT(OnGameListLoadFile(QString)),
             Qt::DirectConnection);
+    connect(game_list, SIGNAL(OpenSaveFolderRequested(u64)), this,
+            SLOT(OnGameListOpenSaveFolder(u64)), Qt::DirectConnection);
     connect(ui.action_Configure, SIGNAL(triggered()), this, SLOT(OnConfigure()));
     connect(ui.action_Load_File, SIGNAL(triggered()), this, SLOT(OnMenuLoadFile()),
             Qt::DirectConnection);
@@ -193,37 +251,6 @@ GMainWindow::GMainWindow() : config(new Config()), emu_thread(nullptr) {
     connect(this, SIGNAL(EmulationStarting(EmuThread*)), waitTreeWidget,
             SLOT(OnEmulationStarting(EmuThread*)));
     connect(this, SIGNAL(EmulationStopping()), waitTreeWidget, SLOT(OnEmulationStopping()));
-
-    // Setup hotkeys
-    RegisterHotkey("Main Window", "Load File", QKeySequence::Open);
-    RegisterHotkey("Main Window", "Start Emulation");
-    LoadHotkeys();
-
-    connect(GetHotkey("Main Window", "Load File", this), SIGNAL(activated()), this,
-            SLOT(OnMenuLoadFile()));
-    connect(GetHotkey("Main Window", "Start Emulation", this), SIGNAL(activated()), this,
-            SLOT(OnStartGame()));
-
-    std::string window_title =
-        Common::StringFromFormat("Citra | %s-%s", Common::g_scm_branch, Common::g_scm_desc);
-    setWindowTitle(window_title.c_str());
-
-    show();
-
-    game_list->PopulateAsync(UISettings::values.gamedir, UISettings::values.gamedir_deepscan);
-
-    QStringList args = QApplication::arguments();
-    if (args.length() >= 2) {
-        BootGame(args[1].toStdString());
-    }
-}
-
-GMainWindow::~GMainWindow() {
-    // will get automatically deleted otherwise
-    if (render_window->parent() == nullptr)
-        delete render_window;
-
-    Pica::g_debug_context.reset();
 }
 
 void GMainWindow::OnDisplayTitleBars(bool show) {
@@ -246,7 +273,7 @@ void GMainWindow::OnDisplayTitleBars(bool show) {
     }
 }
 
-bool GMainWindow::InitializeSystem() {
+bool GMainWindow::LoadROM(const std::string& filename) {
     // Shutdown previous session if the emu thread is still active...
     if (emu_thread != nullptr)
         ShutdownGame();
@@ -262,42 +289,25 @@ bool GMainWindow::InitializeSystem() {
         return false;
     }
 
-    // Initialize the core emulation
-    System::Result system_result = System::Init(render_window);
-    if (System::Result::Success != system_result) {
-        switch (system_result) {
-        case System::Result::ErrorInitVideoCore:
-            QMessageBox::critical(this, tr("Error while starting Citra!"),
-                                  tr("Failed to initialize the video core!\n\n"
-                                     "Please ensure that your GPU supports OpenGL 3.3 and that you "
-                                     "have the latest graphics driver."));
-            break;
+    Core::System& system{Core::System::GetInstance()};
 
-        default:
-            QMessageBox::critical(this, tr("Error while starting Citra!"),
-                                  tr("Unknown error (please check the log)!"));
-            break;
-        }
-        return false;
-    }
-    return true;
-}
+    const Core::System::ResultStatus result{system.Load(render_window, filename)};
 
-bool GMainWindow::LoadROM(const std::string& filename) {
-    std::unique_ptr<Loader::AppLoader> app_loader = Loader::GetLoader(filename);
-    if (!app_loader) {
-        LOG_CRITICAL(Frontend, "Failed to obtain loader for %s!", filename.c_str());
-        QMessageBox::critical(this, tr("Error while loading ROM!"),
-                              tr("The ROM format is not supported."));
-        return false;
-    }
-
-    Loader::ResultStatus result = app_loader->Load();
-    if (Loader::ResultStatus::Success != result) {
-        LOG_CRITICAL(Frontend, "Failed to load ROM!");
-
+    if (result != Core::System::ResultStatus::Success) {
         switch (result) {
-        case Loader::ResultStatus::ErrorEncrypted: {
+        case Core::System::ResultStatus::ErrorGetLoader:
+            LOG_CRITICAL(Frontend, "Failed to obtain loader for %s!", filename.c_str());
+            QMessageBox::critical(this, tr("Error while loading ROM!"),
+                                  tr("The ROM format is not supported."));
+            break;
+
+        case Core::System::ResultStatus::ErrorSystemMode:
+            LOG_CRITICAL(Frontend, "Failed to load ROM!");
+            QMessageBox::critical(this, tr("Error while loading ROM!"),
+                                  tr("Could not determine the system mode."));
+            break;
+
+        case Core::System::ResultStatus::ErrorLoader_ErrorEncrypted: {
             // Build the MessageBox ourselves to have clickable link
             QMessageBox popup_error;
             popup_error.setTextFormat(Qt::RichText);
@@ -312,11 +322,10 @@ bool GMainWindow::LoadROM(const std::string& filename) {
             popup_error.exec();
             break;
         }
-        case Loader::ResultStatus::ErrorInvalidFormat:
+        case Core::System::ResultStatus::ErrorLoader_ErrorInvalidFormat:
             QMessageBox::critical(this, tr("Error while loading ROM!"),
                                   tr("The ROM format is not supported."));
             break;
-        case Loader::ResultStatus::Error:
 
         default:
             QMessageBox::critical(this, tr("Error while loading ROM!"), tr("Unknown error!"));
@@ -331,13 +340,8 @@ void GMainWindow::BootGame(const std::string& filename) {
     LOG_INFO(Frontend, "Citra starting...");
     StoreRecentFile(filename); // Put the filename on top of the list
 
-    if (!InitializeSystem())
+    if (!LoadROM(filename))
         return;
-
-    if (!LoadROM(filename)) {
-        System::Shutdown();
-        return;
-    }
 
     // Create and start the emulation thread
     emu_thread = std::make_unique<EmuThread>(render_window);
@@ -372,6 +376,7 @@ void GMainWindow::BootGame(const std::string& filename) {
         game_list->hide();
     }
     render_window->show();
+    render_window->setFocus();
 
     emulation_running = true;
     OnStartGame();
@@ -444,6 +449,21 @@ void GMainWindow::UpdateRecentFiles() {
 
 void GMainWindow::OnGameListLoadFile(QString game_path) {
     BootGame(game_path.toStdString());
+}
+
+void GMainWindow::OnGameListOpenSaveFolder(u64 program_id) {
+    std::string sdmc_dir = FileUtil::GetUserPath(D_SDMC_IDX);
+    std::string path = FileSys::ArchiveSource_SDSaveData::GetSaveDataPathFor(sdmc_dir, program_id);
+    QString qpath = QString::fromStdString(path);
+
+    QDir dir(qpath);
+    if (!dir.exists()) {
+        QMessageBox::critical(this, tr("Error Opening Save Folder"), tr("Folder does not exist!"));
+        return;
+    }
+
+    LOG_INFO(Frontend, "Opening save data path for program_id=%" PRIu64, program_id);
+    QDesktopServices::openUrl(QUrl::fromLocalFile(qpath));
 }
 
 void GMainWindow::OnMenuLoadFile() {
@@ -548,6 +568,11 @@ void GMainWindow::OnConfigure() {
         render_window->ReloadSetKeymaps();
         config->Save();
     }
+}
+
+void GMainWindow::OnSwapScreens() {
+    Settings::values.swap_screen = !Settings::values.swap_screen;
+    Settings::Apply();
 }
 
 void GMainWindow::OnCreateGraphicsSurfaceViewer() {

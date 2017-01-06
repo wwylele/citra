@@ -27,8 +27,8 @@ OpenGLState::OpenGLState() {
     stencil.test_enabled = false;
     stencil.test_func = GL_ALWAYS;
     stencil.test_ref = 0;
-    stencil.test_mask = -1;
-    stencil.write_mask = -1;
+    stencil.test_mask = 0xFF;
+    stencil.write_mask = 0xFF;
     stencil.action_depth_fail = GL_KEEP;
     stencil.action_depth_pass = GL_KEEP;
     stencil.action_stencil_fail = GL_KEEP;
@@ -230,19 +230,6 @@ void OpenGLState::Apply() const {
     }
 
     cur_state = *this;
-}
-
-GLenum OpenGLState::CheckFBStatus(GLenum target) {
-    GLenum fb_status = glCheckFramebufferStatus(target);
-    if (fb_status != GL_FRAMEBUFFER_COMPLETE) {
-        const char* fb_description =
-            (target == GL_READ_FRAMEBUFFER ? "READ"
-                                           : (target == GL_DRAW_FRAMEBUFFER ? "DRAW" : "UNK"));
-        LOG_CRITICAL(Render_OpenGL, "OpenGL %s framebuffer check failed, status %X", fb_description,
-                     fb_status);
-    }
-
-    return fb_status;
 }
 
 void OpenGLState::ResetTexture(GLuint handle) {

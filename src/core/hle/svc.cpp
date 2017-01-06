@@ -13,6 +13,7 @@
 #include "core/hle/function_wrappers.h"
 #include "core/hle/kernel/address_arbiter.h"
 #include "core/hle/kernel/client_port.h"
+#include "core/hle/kernel/client_session.h"
 #include "core/hle/kernel/event.h"
 #include "core/hle/kernel/memory.h"
 #include "core/hle/kernel/mutex.h"
@@ -20,6 +21,7 @@
 #include "core/hle/kernel/resource_limit.h"
 #include "core/hle/kernel/semaphore.h"
 #include "core/hle/kernel/server_port.h"
+#include "core/hle/kernel/server_session.h"
 #include "core/hle/kernel/shared_memory.h"
 #include "core/hle/kernel/thread.h"
 #include "core/hle/kernel/timer.h"
@@ -40,6 +42,9 @@ const ResultCode ERR_NOT_FOUND(ErrorDescription::NotFound, ErrorModule::Kernel,
 const ResultCode ERR_PORT_NAME_TOO_LONG(ErrorDescription(30), ErrorModule::OS,
                                         ErrorSummary::InvalidArgument,
                                         ErrorLevel::Usage); // 0xE0E0181E
+
+const ResultCode ERR_SYNC_TIMEOUT(ErrorDescription::Timeout, ErrorModule::OS,
+                                  ErrorSummary::StatusChanged, ErrorLevel::Info);
 
 const ResultCode ERR_MISALIGNED_ADDRESS{// 0xE0E01BF1
                                         ErrorDescription::MisalignedAddress, ErrorModule::OS,
@@ -161,7 +166,8 @@ static ResultCode ControlMemory(u32* out_addr, u32 operation, u32 addr0, u32 add
 }
 
 /// Maps a memory block to specified address
-static ResultCode MapMemoryBlock(Handle handle, u32 addr, u32 permissions, u32 other_permissions) {
+static ResultCode MapMemoryBlock(Kernel::Handle handle, u32 addr, u32 permissions,
+                                 u32 other_permissions) {
     using Kernel::SharedMemory;
     using Kernel::MemoryPermission;
 
@@ -193,7 +199,7 @@ static ResultCode MapMemoryBlock(Handle handle, u32 addr, u32 permissions, u32 o
                       ErrorSummary::InvalidArgument, ErrorLevel::Usage);
 }
 
-static ResultCode UnmapMemoryBlock(Handle handle, u32 addr) {
+static ResultCode UnmapMemoryBlock(Kernel::Handle handle, u32 addr) {
     using Kernel::SharedMemory;
 
     LOG_TRACE(Kernel_SVC, "called memblock=0x%08X, addr=0x%08X", handle, addr);
@@ -208,7 +214,7 @@ static ResultCode UnmapMemoryBlock(Handle handle, u32 addr) {
 }
 
 /// Connect to an OS service given the port name, returns the handle to the port to out
-static ResultCode ConnectToPort(Handle* out_handle, const char* port_name) {
+static ResultCode ConnectToPort(Kernel::Handle* out_handle, const char* port_name) {
     if (port_name == nullptr)
         return ERR_NOT_FOUND;
     if (std::strlen(port_name) > 11)
@@ -222,34 +228,41 @@ static ResultCode ConnectToPort(Handle* out_handle, const char* port_name) {
         return ERR_NOT_FOUND;
     }
 
-    CASCADE_RESULT(*out_handle, Kernel::g_handle_table.Create(it->second));
+    auto client_port = it->second;
+
+    SharedPtr<Kernel::ClientSession> client_session;
+    CASCADE_RESULT(client_session, client_port->Connect());
+
+    // Return the client session
+    CASCADE_RESULT(*out_handle, Kernel::g_handle_table.Create(client_session));
     return RESULT_SUCCESS;
 }
 
-/// Synchronize to an OS service
-static ResultCode SendSyncRequest(Handle handle) {
-    SharedPtr<Kernel::Session> session = Kernel::g_handle_table.Get<Kernel::Session>(handle);
+/// Makes a blocking IPC call to an OS service.
+static ResultCode SendSyncRequest(Kernel::Handle handle) {
+    SharedPtr<Kernel::ClientSession> session =
+        Kernel::g_handle_table.Get<Kernel::ClientSession>(handle);
     if (session == nullptr) {
         return ERR_INVALID_HANDLE;
     }
 
     LOG_TRACE(Kernel_SVC, "called handle=0x%08X(%s)", handle, session->GetName().c_str());
 
-    return session->SyncRequest().Code();
+    // TODO(Subv): svcSendSyncRequest should put the caller thread to sleep while the server
+    // responds and cause a reschedule.
+    return session->SendSyncRequest();
 }
 
 /// Close a handle
-static ResultCode CloseHandle(Handle handle) {
+static ResultCode CloseHandle(Kernel::Handle handle) {
     LOG_TRACE(Kernel_SVC, "Closing handle 0x%08X", handle);
     return Kernel::g_handle_table.Close(handle);
 }
 
 /// Wait for a handle to synchronize, timeout after the specified nanoseconds
-static ResultCode WaitSynchronization1(Handle handle, s64 nano_seconds) {
+static ResultCode WaitSynchronization1(Kernel::Handle handle, s64 nano_seconds) {
     auto object = Kernel::g_handle_table.GetWaitObject(handle);
     Kernel::Thread* thread = Kernel::GetCurrentThread();
-
-    thread->waitsynch_waited = false;
 
     if (object == nullptr)
         return ERR_INVALID_HANDLE;
@@ -257,19 +270,24 @@ static ResultCode WaitSynchronization1(Handle handle, s64 nano_seconds) {
     LOG_TRACE(Kernel_SVC, "called handle=0x%08X(%s:%s), nanoseconds=%lld", handle,
               object->GetTypeName().c_str(), object->GetName().c_str(), nano_seconds);
 
-    HLE::Reschedule(__func__);
-
-    // Check for next thread to schedule
     if (object->ShouldWait()) {
 
+        if (nano_seconds == 0)
+            return ERR_SYNC_TIMEOUT;
+
         object->AddWaitingThread(thread);
-        Kernel::WaitCurrentThread_WaitSynchronization({object}, false, false);
+        // TODO(Subv): Perform things like update the mutex lock owner's priority to
+        // prevent priority inversion. Currently this is done in Mutex::ShouldWait,
+        // but it should be moved to a function that is called from here.
+        thread->status = THREADSTATUS_WAIT_SYNCH;
 
         // Create an event to wake the thread up after the specified nanosecond delay has passed
         thread->WakeAfterDelay(nano_seconds);
 
-        // NOTE: output of this SVC will be set later depending on how the thread resumes
-        return HLE::RESULT_INVALID;
+        // Note: The output of this SVC will be set to RESULT_SUCCESS if the thread
+        // resumes due to a signal in its wait objects.
+        // Otherwise we retain the default value of timeout.
+        return ERR_SYNC_TIMEOUT;
     }
 
     object->Acquire();
@@ -278,13 +296,9 @@ static ResultCode WaitSynchronization1(Handle handle, s64 nano_seconds) {
 }
 
 /// Wait for the given handles to synchronize, timeout after the specified nanoseconds
-static ResultCode WaitSynchronizationN(s32* out, Handle* handles, s32 handle_count, bool wait_all,
-                                       s64 nano_seconds) {
-    bool wait_thread = !wait_all;
-    int handle_index = 0;
+static ResultCode WaitSynchronizationN(s32* out, Kernel::Handle* handles, s32 handle_count,
+                                       bool wait_all, s64 nano_seconds) {
     Kernel::Thread* thread = Kernel::GetCurrentThread();
-    bool was_waiting = thread->waitsynch_waited;
-    thread->waitsynch_waited = false;
 
     // Check if 'handles' is invalid
     if (handles == nullptr)
@@ -300,94 +314,117 @@ static ResultCode WaitSynchronizationN(s32* out, Handle* handles, s32 handle_cou
         return ResultCode(ErrorDescription::OutOfRange, ErrorModule::OS,
                           ErrorSummary::InvalidArgument, ErrorLevel::Usage);
 
-    // If 'handle_count' is non-zero, iterate through each handle and wait the current thread if
-    // necessary
-    if (handle_count != 0) {
-        bool selected = false; // True once an object has been selected
+    using ObjectPtr = Kernel::SharedPtr<Kernel::WaitObject>;
+    std::vector<ObjectPtr> objects(handle_count);
 
-        Kernel::SharedPtr<Kernel::WaitObject> wait_object;
-
-        for (int i = 0; i < handle_count; ++i) {
-            auto object = Kernel::g_handle_table.GetWaitObject(handles[i]);
-            if (object == nullptr)
-                return ERR_INVALID_HANDLE;
-
-            // Check if the current thread should wait on this object...
-            if (object->ShouldWait()) {
-
-                // Check we are waiting on all objects...
-                if (wait_all)
-                    // Wait the thread
-                    wait_thread = true;
-            } else {
-                // Do not wait on this object, check if this object should be selected...
-                if (!wait_all && (!selected || (wait_object == object && was_waiting))) {
-                    // Do not wait the thread
-                    wait_thread = false;
-                    handle_index = i;
-                    wait_object = object;
-                    selected = true;
-                }
-            }
-        }
-    } else {
-        // If no handles were passed in, put the thread to sleep only when 'wait_all' is false
-        // NOTE: This should deadlock the current thread if no timeout was specified
-        if (!wait_all) {
-            wait_thread = true;
-        }
-    }
-
-    SCOPE_EXIT({
-        HLE::Reschedule("WaitSynchronizationN");
-    }); // Reschedule after putting the threads to sleep.
-
-    // If thread should wait, then set its state to waiting
-    if (wait_thread) {
-
-        // Actually wait the current thread on each object if we decided to wait...
-        std::vector<SharedPtr<Kernel::WaitObject>> wait_objects;
-        wait_objects.reserve(handle_count);
-
-        for (int i = 0; i < handle_count; ++i) {
-            auto object = Kernel::g_handle_table.GetWaitObject(handles[i]);
-            object->AddWaitingThread(Kernel::GetCurrentThread());
-            wait_objects.push_back(object);
-        }
-
-        Kernel::WaitCurrentThread_WaitSynchronization(std::move(wait_objects), true, wait_all);
-
-        // Create an event to wake the thread up after the specified nanosecond delay has passed
-        Kernel::GetCurrentThread()->WakeAfterDelay(nano_seconds);
-
-        // NOTE: output of this SVC will be set later depending on how the thread resumes
-        return HLE::RESULT_INVALID;
-    }
-
-    // Acquire objects if we did not wait...
     for (int i = 0; i < handle_count; ++i) {
         auto object = Kernel::g_handle_table.GetWaitObject(handles[i]);
-
-        // Acquire the object if it is not waiting...
-        if (!object->ShouldWait()) {
-            object->Acquire();
-
-            // If this was the first non-waiting object and 'wait_all' is false, don't acquire
-            // any other objects
-            if (!wait_all)
-                break;
-        }
+        if (object == nullptr)
+            return ERR_INVALID_HANDLE;
+        objects[i] = object;
     }
 
-    // TODO(bunnei): If 'wait_all' is true, this is probably wrong. However, real hardware does
-    // not seem to set it to any meaningful value.
-    *out = handle_count != 0 ? (wait_all ? -1 : handle_index) : 0;
+    // Clear the mapping of wait object indices.
+    // We don't want any lingering state in this map.
+    // It will be repopulated later in the wait_all = false case.
+    thread->wait_objects_index.clear();
 
-    return RESULT_SUCCESS;
+    if (wait_all) {
+        bool all_available =
+            std::all_of(objects.begin(), objects.end(),
+                        [](const ObjectPtr& object) { return !object->ShouldWait(); });
+        if (all_available) {
+            // We can acquire all objects right now, do so.
+            for (auto& object : objects)
+                object->Acquire();
+            // Note: In this case, the `out` parameter is not set,
+            // and retains whatever value it had before.
+            return RESULT_SUCCESS;
+        }
+
+        // Not all objects were available right now, prepare to suspend the thread.
+
+        // If a timeout value of 0 was provided, just return the Timeout error code instead of
+        // suspending the thread.
+        if (nano_seconds == 0)
+            return ERR_SYNC_TIMEOUT;
+
+        // Put the thread to sleep
+        thread->status = THREADSTATUS_WAIT_SYNCH;
+
+        // Add the thread to each of the objects' waiting threads.
+        for (auto& object : objects) {
+            object->AddWaitingThread(thread);
+            // TODO(Subv): Perform things like update the mutex lock owner's priority to
+            // prevent priority inversion. Currently this is done in Mutex::ShouldWait,
+            // but it should be moved to a function that is called from here.
+        }
+
+        // Set the thread's waitlist to the list of objects passed to WaitSynchronizationN
+        thread->wait_objects = std::move(objects);
+
+        // Create an event to wake the thread up after the specified nanosecond delay has passed
+        thread->WakeAfterDelay(nano_seconds);
+
+        // This value gets set to -1 by default in this case, it is not modified after this.
+        *out = -1;
+        // Note: The output of this SVC will be set to RESULT_SUCCESS if the thread resumes due to
+        // a signal in one of its wait objects.
+        return ERR_SYNC_TIMEOUT;
+    } else {
+        // Find the first object that is acquirable in the provided list of objects
+        auto itr = std::find_if(objects.begin(), objects.end(),
+                                [](const ObjectPtr& object) { return !object->ShouldWait(); });
+
+        if (itr != objects.end()) {
+            // We found a ready object, acquire it and set the result value
+            Kernel::WaitObject* object = itr->get();
+            object->Acquire();
+            *out = std::distance(objects.begin(), itr);
+            return RESULT_SUCCESS;
+        }
+
+        // No objects were ready to be acquired, prepare to suspend the thread.
+
+        // If a timeout value of 0 was provided, just return the Timeout error code instead of
+        // suspending the thread.
+        if (nano_seconds == 0)
+            return ERR_SYNC_TIMEOUT;
+
+        // Put the thread to sleep
+        thread->status = THREADSTATUS_WAIT_SYNCH;
+
+        // Clear the thread's waitlist, we won't use it for wait_all = false
+        thread->wait_objects.clear();
+
+        // Add the thread to each of the objects' waiting threads.
+        for (size_t i = 0; i < objects.size(); ++i) {
+            Kernel::WaitObject* object = objects[i].get();
+            // Set the index of this object in the mapping of Objects -> index for this thread.
+            thread->wait_objects_index[object->GetObjectId()] = static_cast<int>(i);
+            object->AddWaitingThread(thread);
+            // TODO(Subv): Perform things like update the mutex lock owner's priority to
+            // prevent priority inversion. Currently this is done in Mutex::ShouldWait,
+            // but it should be moved to a function that is called from here.
+        }
+
+        // Note: If no handles and no timeout were given, then the thread will deadlock, this is
+        // consistent with hardware behavior.
+
+        // Create an event to wake the thread up after the specified nanosecond delay has passed
+        thread->WakeAfterDelay(nano_seconds);
+
+        // Note: The output of this SVC will be set to RESULT_SUCCESS if the thread resumes due to a
+        // signal in one of its wait objects.
+        // Otherwise we retain the default value of timeout, and -1 in the out parameter
+        thread->wait_set_output = true;
+        *out = -1;
+        return ERR_SYNC_TIMEOUT;
+    }
 }
 
 /// Create an address arbiter (to allocate access to shared resources)
-static ResultCode CreateAddressArbiter(Handle* out_handle) {
+static ResultCode CreateAddressArbiter(Kernel::Handle* out_handle) {
     using Kernel::AddressArbiter;
 
     SharedPtr<AddressArbiter> arbiter = AddressArbiter::Create();
@@ -397,7 +434,7 @@ static ResultCode CreateAddressArbiter(Handle* out_handle) {
 }
 
 /// Arbitrate address
-static ResultCode ArbitrateAddress(Handle handle, u32 address, u32 type, u32 value,
+static ResultCode ArbitrateAddress(Kernel::Handle handle, u32 address, u32 type, u32 value,
                                    s64 nanoseconds) {
     using Kernel::AddressArbiter;
 
@@ -440,7 +477,7 @@ static void OutputDebugString(const char* string) {
 }
 
 /// Get resource limit
-static ResultCode GetResourceLimit(Handle* resource_limit, Handle process_handle) {
+static ResultCode GetResourceLimit(Kernel::Handle* resource_limit, Kernel::Handle process_handle) {
     LOG_TRACE(Kernel_SVC, "called process=0x%08X", process_handle);
 
     SharedPtr<Kernel::Process> process =
@@ -454,7 +491,7 @@ static ResultCode GetResourceLimit(Handle* resource_limit, Handle process_handle
 }
 
 /// Get resource limit current values
-static ResultCode GetResourceLimitCurrentValues(s64* values, Handle resource_limit_handle,
+static ResultCode GetResourceLimitCurrentValues(s64* values, Kernel::Handle resource_limit_handle,
                                                 u32* names, u32 name_count) {
     LOG_TRACE(Kernel_SVC, "called resource_limit=%08X, names=%p, name_count=%d",
               resource_limit_handle, names, name_count);
@@ -471,8 +508,8 @@ static ResultCode GetResourceLimitCurrentValues(s64* values, Handle resource_lim
 }
 
 /// Get resource limit max values
-static ResultCode GetResourceLimitLimitValues(s64* values, Handle resource_limit_handle, u32* names,
-                                              u32 name_count) {
+static ResultCode GetResourceLimitLimitValues(s64* values, Kernel::Handle resource_limit_handle,
+                                              u32* names, u32 name_count) {
     LOG_TRACE(Kernel_SVC, "called resource_limit=%08X, names=%p, name_count=%d",
               resource_limit_handle, names, name_count);
 
@@ -488,7 +525,7 @@ static ResultCode GetResourceLimitLimitValues(s64* values, Handle resource_limit
 }
 
 /// Creates a new thread
-static ResultCode CreateThread(Handle* out_handle, s32 priority, u32 entry_point, u32 arg,
+static ResultCode CreateThread(Kernel::Handle* out_handle, s32 priority, u32 entry_point, u32 arg,
                                u32 stack_top, s32 processor_id) {
     using Kernel::Thread;
 
@@ -546,13 +583,13 @@ static ResultCode CreateThread(Handle* out_handle, s32 priority, u32 entry_point
 
 /// Called when a thread exits
 static void ExitThread() {
-    LOG_TRACE(Kernel_SVC, "called, pc=0x%08X", Core::g_app_core->GetPC());
+    LOG_TRACE(Kernel_SVC, "called, pc=0x%08X", Core::CPU().GetPC());
 
-    Kernel::GetCurrentThread()->Stop();
+    Kernel::ExitCurrentThread();
 }
 
 /// Gets the priority for the specified thread
-static ResultCode GetThreadPriority(s32* priority, Handle handle) {
+static ResultCode GetThreadPriority(s32* priority, Kernel::Handle handle) {
     const SharedPtr<Kernel::Thread> thread = Kernel::g_handle_table.Get<Kernel::Thread>(handle);
     if (thread == nullptr)
         return ERR_INVALID_HANDLE;
@@ -562,7 +599,7 @@ static ResultCode GetThreadPriority(s32* priority, Handle handle) {
 }
 
 /// Sets the priority for the specified thread
-static ResultCode SetThreadPriority(Handle handle, s32 priority) {
+static ResultCode SetThreadPriority(Kernel::Handle handle, s32 priority) {
     SharedPtr<Kernel::Thread> thread = Kernel::g_handle_table.Get<Kernel::Thread>(handle);
     if (thread == nullptr)
         return ERR_INVALID_HANDLE;
@@ -572,11 +609,11 @@ static ResultCode SetThreadPriority(Handle handle, s32 priority) {
 }
 
 /// Create a mutex
-static ResultCode CreateMutex(Handle* out_handle, u32 initial_locked) {
+static ResultCode CreateMutex(Kernel::Handle* out_handle, u32 initial_locked) {
     using Kernel::Mutex;
 
     SharedPtr<Mutex> mutex = Mutex::Create(initial_locked != 0);
-    mutex->name = Common::StringFromFormat("mutex-%08x", Core::g_app_core->GetReg(14));
+    mutex->name = Common::StringFromFormat("mutex-%08x", Core::CPU().GetReg(14));
     CASCADE_RESULT(*out_handle, Kernel::g_handle_table.Create(std::move(mutex)));
 
     LOG_TRACE(Kernel_SVC, "called initial_locked=%s : created handle=0x%08X",
@@ -586,7 +623,7 @@ static ResultCode CreateMutex(Handle* out_handle, u32 initial_locked) {
 }
 
 /// Release a mutex
-static ResultCode ReleaseMutex(Handle handle) {
+static ResultCode ReleaseMutex(Kernel::Handle handle) {
     using Kernel::Mutex;
 
     LOG_TRACE(Kernel_SVC, "called handle=0x%08X", handle);
@@ -601,7 +638,7 @@ static ResultCode ReleaseMutex(Handle handle) {
 }
 
 /// Get the ID of the specified process
-static ResultCode GetProcessId(u32* process_id, Handle process_handle) {
+static ResultCode GetProcessId(u32* process_id, Kernel::Handle process_handle) {
     LOG_TRACE(Kernel_SVC, "called process=0x%08X", process_handle);
 
     const SharedPtr<Kernel::Process> process =
@@ -614,7 +651,7 @@ static ResultCode GetProcessId(u32* process_id, Handle process_handle) {
 }
 
 /// Get the ID of the process that owns the specified thread
-static ResultCode GetProcessIdOfThread(u32* process_id, Handle thread_handle) {
+static ResultCode GetProcessIdOfThread(u32* process_id, Kernel::Handle thread_handle) {
     LOG_TRACE(Kernel_SVC, "called thread=0x%08X", thread_handle);
 
     const SharedPtr<Kernel::Thread> thread =
@@ -631,7 +668,7 @@ static ResultCode GetProcessIdOfThread(u32* process_id, Handle thread_handle) {
 }
 
 /// Get the ID for the specified thread.
-static ResultCode GetThreadId(u32* thread_id, Handle handle) {
+static ResultCode GetThreadId(u32* thread_id, Kernel::Handle handle) {
     LOG_TRACE(Kernel_SVC, "called thread=0x%08X", handle);
 
     const SharedPtr<Kernel::Thread> thread = Kernel::g_handle_table.Get<Kernel::Thread>(handle);
@@ -643,11 +680,11 @@ static ResultCode GetThreadId(u32* thread_id, Handle handle) {
 }
 
 /// Creates a semaphore
-static ResultCode CreateSemaphore(Handle* out_handle, s32 initial_count, s32 max_count) {
+static ResultCode CreateSemaphore(Kernel::Handle* out_handle, s32 initial_count, s32 max_count) {
     using Kernel::Semaphore;
 
     CASCADE_RESULT(SharedPtr<Semaphore> semaphore, Semaphore::Create(initial_count, max_count));
-    semaphore->name = Common::StringFromFormat("semaphore-%08x", Core::g_app_core->GetReg(14));
+    semaphore->name = Common::StringFromFormat("semaphore-%08x", Core::CPU().GetReg(14));
     CASCADE_RESULT(*out_handle, Kernel::g_handle_table.Create(std::move(semaphore)));
 
     LOG_TRACE(Kernel_SVC, "called initial_count=%d, max_count=%d, created handle=0x%08X",
@@ -656,7 +693,7 @@ static ResultCode CreateSemaphore(Handle* out_handle, s32 initial_count, s32 max
 }
 
 /// Releases a certain number of slots in a semaphore
-static ResultCode ReleaseSemaphore(s32* count, Handle handle, s32 release_count) {
+static ResultCode ReleaseSemaphore(s32* count, Kernel::Handle handle, s32 release_count) {
     using Kernel::Semaphore;
 
     LOG_TRACE(Kernel_SVC, "called release_count=%d, handle=0x%08X", release_count, handle);
@@ -672,7 +709,7 @@ static ResultCode ReleaseSemaphore(s32* count, Handle handle, s32 release_count)
 
 /// Query process memory
 static ResultCode QueryProcessMemory(MemoryInfo* memory_info, PageInfo* page_info,
-                                     Handle process_handle, u32 addr) {
+                                     Kernel::Handle process_handle, u32 addr) {
     using Kernel::Process;
     Kernel::SharedPtr<Process> process = Kernel::g_handle_table.Get<Process>(process_handle);
     if (process == nullptr)
@@ -700,11 +737,11 @@ static ResultCode QueryMemory(MemoryInfo* memory_info, PageInfo* page_info, u32 
 }
 
 /// Create an event
-static ResultCode CreateEvent(Handle* out_handle, u32 reset_type) {
+static ResultCode CreateEvent(Kernel::Handle* out_handle, u32 reset_type) {
     using Kernel::Event;
 
     SharedPtr<Event> evt = Event::Create(static_cast<Kernel::ResetType>(reset_type));
-    evt->name = Common::StringFromFormat("event-%08x", Core::g_app_core->GetReg(14));
+    evt->name = Common::StringFromFormat("event-%08x", Core::CPU().GetReg(14));
     CASCADE_RESULT(*out_handle, Kernel::g_handle_table.Create(std::move(evt)));
 
     LOG_TRACE(Kernel_SVC, "called reset_type=0x%08X : created handle=0x%08X", reset_type,
@@ -713,14 +750,14 @@ static ResultCode CreateEvent(Handle* out_handle, u32 reset_type) {
 }
 
 /// Duplicates a kernel handle
-static ResultCode DuplicateHandle(Handle* out, Handle handle) {
+static ResultCode DuplicateHandle(Kernel::Handle* out, Kernel::Handle handle) {
     CASCADE_RESULT(*out, Kernel::g_handle_table.Duplicate(handle));
     LOG_TRACE(Kernel_SVC, "duplicated 0x%08X to 0x%08X", handle, *out);
     return RESULT_SUCCESS;
 }
 
 /// Signals an event
-static ResultCode SignalEvent(Handle handle) {
+static ResultCode SignalEvent(Kernel::Handle handle) {
     using Kernel::Event;
     LOG_TRACE(Kernel_SVC, "called event=0x%08X", handle);
 
@@ -734,7 +771,7 @@ static ResultCode SignalEvent(Handle handle) {
 }
 
 /// Clears an event
-static ResultCode ClearEvent(Handle handle) {
+static ResultCode ClearEvent(Kernel::Handle handle) {
     using Kernel::Event;
     LOG_TRACE(Kernel_SVC, "called event=0x%08X", handle);
 
@@ -747,11 +784,11 @@ static ResultCode ClearEvent(Handle handle) {
 }
 
 /// Creates a timer
-static ResultCode CreateTimer(Handle* out_handle, u32 reset_type) {
+static ResultCode CreateTimer(Kernel::Handle* out_handle, u32 reset_type) {
     using Kernel::Timer;
 
     SharedPtr<Timer> timer = Timer::Create(static_cast<Kernel::ResetType>(reset_type));
-    timer->name = Common::StringFromFormat("timer-%08x", Core::g_app_core->GetReg(14));
+    timer->name = Common::StringFromFormat("timer-%08x", Core::CPU().GetReg(14));
     CASCADE_RESULT(*out_handle, Kernel::g_handle_table.Create(std::move(timer)));
 
     LOG_TRACE(Kernel_SVC, "called reset_type=0x%08X : created handle=0x%08X", reset_type,
@@ -760,7 +797,7 @@ static ResultCode CreateTimer(Handle* out_handle, u32 reset_type) {
 }
 
 /// Clears a timer
-static ResultCode ClearTimer(Handle handle) {
+static ResultCode ClearTimer(Kernel::Handle handle) {
     using Kernel::Timer;
 
     LOG_TRACE(Kernel_SVC, "called timer=0x%08X", handle);
@@ -774,7 +811,7 @@ static ResultCode ClearTimer(Handle handle) {
 }
 
 /// Starts a timer
-static ResultCode SetTimer(Handle handle, s64 initial, s64 interval) {
+static ResultCode SetTimer(Kernel::Handle handle, s64 initial, s64 interval) {
     using Kernel::Timer;
 
     LOG_TRACE(Kernel_SVC, "called timer=0x%08X", handle);
@@ -789,7 +826,7 @@ static ResultCode SetTimer(Handle handle, s64 initial, s64 interval) {
 }
 
 /// Cancels a timer
-static ResultCode CancelTimer(Handle handle) {
+static ResultCode CancelTimer(Kernel::Handle handle) {
     using Kernel::Timer;
 
     LOG_TRACE(Kernel_SVC, "called timer=0x%08X", handle);
@@ -818,14 +855,13 @@ static void SleepThread(s64 nanoseconds) {
 static s64 GetSystemTick() {
     s64 result = CoreTiming::GetTicks();
     // Advance time to defeat dumb games (like Cubic Ninja) that busy-wait for the frame to end.
-    Core::g_app_core->AddTicks(
-        150); // Measured time between two calls on a 9.2 o3DS with Ninjhax 1.1b
+    Core::CPU().AddTicks(150); // Measured time between two calls on a 9.2 o3DS with Ninjhax 1.1b
     return result;
 }
 
 /// Creates a memory block at the specified address with the specified permissions and size
-static ResultCode CreateMemoryBlock(Handle* out_handle, u32 addr, u32 size, u32 my_permission,
-                                    u32 other_permission) {
+static ResultCode CreateMemoryBlock(Kernel::Handle* out_handle, u32 addr, u32 size,
+                                    u32 my_permission, u32 other_permission) {
     using Kernel::SharedMemory;
 
     if (size % Memory::PAGE_SIZE != 0)
@@ -876,8 +912,8 @@ static ResultCode CreateMemoryBlock(Handle* out_handle, u32 addr, u32 size, u32 
     return RESULT_SUCCESS;
 }
 
-static ResultCode CreatePort(Handle* server_port, Handle* client_port, const char* name,
-                             u32 max_sessions) {
+static ResultCode CreatePort(Kernel::Handle* server_port, Kernel::Handle* client_port,
+                             const char* name, u32 max_sessions) {
     // TODO(Subv): Implement named ports.
     ASSERT_MSG(name == nullptr, "Named ports are currently unimplemented");
 
@@ -942,7 +978,7 @@ static ResultCode GetSystemInfo(s64* out, u32 type, s32 param) {
     return RESULT_SUCCESS;
 }
 
-static ResultCode GetProcessInfo(s64* out, Handle process_handle, u32 type) {
+static ResultCode GetProcessInfo(s64* out, Kernel::Handle process_handle, u32 type) {
     LOG_TRACE(Kernel_SVC, "called process=0x%08X type=%u", process_handle, type);
 
     using Kernel::Process;
@@ -1148,6 +1184,8 @@ void CallSVC(u32 immediate) {
     if (info) {
         if (info->func) {
             info->func();
+            //  TODO(Subv): Not all service functions should cause a reschedule in all cases.
+            Core::System::GetInstance().PrepareReschedule();
         } else {
             LOG_ERROR(Kernel_SVC, "unimplemented SVC function %s(..)", info->name);
         }

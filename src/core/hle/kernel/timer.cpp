@@ -31,6 +31,11 @@ SharedPtr<Timer> Timer::Create(ResetType reset_type, std::string name) {
     timer->interval_delay = 0;
     timer->callback_handle = timer_callback_handle_table.Create(timer).MoveFrom();
 
+    if (reset_type == ResetType::Pulse) {
+        LOG_ERROR(Kernel, "Unimplemented timer reset type Pulse");
+        UNIMPLEMENTED();
+    }
+
     return timer;
 }
 
@@ -55,14 +60,10 @@ void Timer::Set(s64 initial, s64 interval) {
     u64 initial_microseconds = initial / 1000;
     CoreTiming::ScheduleEvent(usToCycles(initial_microseconds), timer_callback_event_type,
                               callback_handle);
-
-    HLE::Reschedule(__func__);
 }
 
 void Timer::Cancel() {
     CoreTiming::UnscheduleEvent(timer_callback_event_type, callback_handle);
-
-    HLE::Reschedule(__func__);
 }
 
 void Timer::Clear() {

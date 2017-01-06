@@ -3,6 +3,7 @@
 // Refer to the license.txt file included.
 
 #include <algorithm>
+#include <boost/range/algorithm_ext/erase.hpp>
 #include "common/assert.h"
 #include "common/logging/log.h"
 #include "core/hle/config_mem.h"
@@ -31,13 +32,61 @@ void WaitObject::RemoveWaitingThread(Thread* thread) {
         waiting_threads.erase(itr);
 }
 
+SharedPtr<Thread> WaitObject::GetHighestPriorityReadyThread() {
+    // Remove the threads that are ready or already running from our waitlist
+    boost::range::remove_erase_if(waiting_threads, [](const SharedPtr<Thread>& thread) {
+        return thread->status == THREADSTATUS_RUNNING || thread->status == THREADSTATUS_READY ||
+               thread->status == THREADSTATUS_DEAD;
+    });
+
+    // TODO(Subv): This call should be performed inside the loop below to check if an object can be
+    // acquired by a particular thread. This is useful for things like recursive locking of Mutexes.
+    if (ShouldWait())
+        return nullptr;
+
+    Thread* candidate = nullptr;
+    s32 candidate_priority = THREADPRIO_LOWEST + 1;
+
+    for (const auto& thread : waiting_threads) {
+        if (thread->current_priority >= candidate_priority)
+            continue;
+
+        bool ready_to_run =
+            std::none_of(thread->wait_objects.begin(), thread->wait_objects.end(),
+                         [](const SharedPtr<WaitObject>& object) { return object->ShouldWait(); });
+        if (ready_to_run) {
+            candidate = thread.get();
+            candidate_priority = thread->current_priority;
+        }
+    }
+
+    return candidate;
+}
+
 void WaitObject::WakeupAllWaitingThreads() {
-    for (auto thread : waiting_threads)
+    while (auto thread = GetHighestPriorityReadyThread()) {
+        if (!thread->IsSleepingOnWaitAll()) {
+            Acquire();
+            // Set the output index of the WaitSynchronizationN call to the index of this object.
+            if (thread->wait_set_output) {
+                thread->SetWaitSynchronizationOutput(thread->GetWaitObjectIndex(this));
+                thread->wait_set_output = false;
+            }
+        } else {
+            for (auto& object : thread->wait_objects) {
+                object->Acquire();
+                object->RemoveWaitingThread(thread.get());
+            }
+            // Note: This case doesn't update the output index of WaitSynchronizationN.
+            // Clear the thread's waitlist
+            thread->wait_objects.clear();
+        }
+
+        thread->SetWaitSynchronizationResult(RESULT_SUCCESS);
         thread->ResumeFromWait();
-
-    waiting_threads.clear();
-
-    HLE::Reschedule(__func__);
+        // Note: Removing the thread from the object's waitlist will be
+        // done by GetHighestPriorityReadyThread.
+    }
 }
 
 const std::vector<SharedPtr<Thread>>& WaitObject::GetWaitingThreads() const {
@@ -124,13 +173,11 @@ void HandleTable::Clear() {
 }
 
 /// Initialize the kernel
-void Init() {
+void Init(u32 system_mode) {
     ConfigMem::Init();
     SharedPage::Init();
 
-    // TODO(yuriks): The memory type parameter needs to be determined by the ExHeader field instead
-    // For now it defaults to the one with a largest allocation to the app
-    Kernel::MemoryInit(2); // Allocates 96MB to the application
+    Kernel::MemoryInit(system_mode);
 
     Kernel::ResourceLimitsInit();
     Kernel::ThreadingInit();

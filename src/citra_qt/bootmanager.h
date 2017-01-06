@@ -2,13 +2,15 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#pragma once
+
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
 #include <QGLWidget>
 #include <QThread>
-#include "common/emu_window.h"
 #include "common/thread.h"
+#include "core/frontend/emu_window.h"
 
 class QKeyEvent;
 class QScreen;
@@ -21,7 +23,7 @@ class EmuThread : public QThread {
     Q_OBJECT
 
 public:
-    EmuThread(GRenderWindow* render_window);
+    explicit EmuThread(GRenderWindow* render_window);
 
     /**
      * Start emulation (on new thread)

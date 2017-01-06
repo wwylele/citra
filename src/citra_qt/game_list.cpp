@@ -3,6 +3,7 @@
 // Refer to the license.txt file included.
 
 #include <QHeaderView>
+#include <QMenu>
 #include <QThreadPool>
 #include <QVBoxLayout>
 #include "common/common_paths.h"
@@ -13,7 +14,7 @@
 #include "game_list_p.h"
 #include "ui_settings.h"
 
-GameList::GameList(QWidget* parent) {
+GameList::GameList(QWidget* parent) : QWidget{parent} {
     QVBoxLayout* layout = new QVBoxLayout;
 
     tree_view = new QTreeView;
@@ -28,18 +29,18 @@ GameList::GameList(QWidget* parent) {
     tree_view->setSortingEnabled(true);
     tree_view->setEditTriggers(QHeaderView::NoEditTriggers);
     tree_view->setUniformRowHeights(true);
+    tree_view->setContextMenuPolicy(Qt::CustomContextMenu);
 
     item_model->insertColumns(0, COLUMN_COUNT);
     item_model->setHeaderData(COLUMN_NAME, Qt::Horizontal, "Name");
     item_model->setHeaderData(COLUMN_FILE_TYPE, Qt::Horizontal, "File type");
     item_model->setHeaderData(COLUMN_SIZE, Qt::Horizontal, "Size");
 
-    connect(tree_view, SIGNAL(activated(const QModelIndex&)), this,
-            SLOT(ValidateEntry(const QModelIndex&)));
+    connect(tree_view, &QTreeView::activated, this, &GameList::ValidateEntry);
+    connect(tree_view, &QTreeView::customContextMenuRequested, this, &GameList::PopupContextMenu);
 
     // We must register all custom types with the Qt Automoc system so that we are able to use it
-    // with
-    // signals/slots. In this case, QList falls under the umbrells of custom types.
+    // with signals/slots. In this case, QList falls under the umbrells of custom types.
     qRegisterMetaType<QList<QStandardItem*>>("QList<QStandardItem*>");
 
     layout->addWidget(tree_view);
@@ -50,7 +51,7 @@ GameList::~GameList() {
     emit ShouldCancelWorker();
 }
 
-void GameList::AddEntry(QList<QStandardItem*> entry_items) {
+void GameList::AddEntry(const QList<QStandardItem*>& entry_items) {
     item_model->invisibleRootItem()->appendRow(entry_items);
 }
 
@@ -72,6 +73,23 @@ void GameList::DonePopulating() {
     tree_view->setEnabled(true);
 }
 
+void GameList::PopupContextMenu(const QPoint& menu_location) {
+    QModelIndex item = tree_view->indexAt(menu_location);
+    if (!item.isValid())
+        return;
+
+    int row = item_model->itemFromIndex(item)->row();
+    QStandardItem* child_file = item_model->invisibleRootItem()->child(row, COLUMN_NAME);
+    u64 program_id = child_file->data(GameListItemPath::ProgramIdRole).toULongLong();
+
+    QMenu context_menu;
+    QAction* open_save_location = context_menu.addAction(tr("Open Save Data Location"));
+    open_save_location->setEnabled(program_id != 0);
+    connect(open_save_location, &QAction::triggered,
+            [&]() { emit OpenSaveFolderRequested(program_id); });
+    context_menu.exec(tree_view->viewport()->mapToGlobal(menu_location));
+}
+
 void GameList::PopulateAsync(const QString& dir_path, bool deep_scan) {
     if (!FileUtil::Exists(dir_path.toStdString()) ||
         !FileUtil::IsDirectory(dir_path.toStdString())) {
@@ -86,12 +104,13 @@ void GameList::PopulateAsync(const QString& dir_path, bool deep_scan) {
     emit ShouldCancelWorker();
     GameListWorker* worker = new GameListWorker(dir_path, deep_scan);
 
-    connect(worker, SIGNAL(EntryReady(QList<QStandardItem*>)), this,
-            SLOT(AddEntry(QList<QStandardItem*>)), Qt::QueuedConnection);
-    connect(worker, SIGNAL(Finished()), this, SLOT(DonePopulating()), Qt::QueuedConnection);
+    connect(worker, &GameListWorker::EntryReady, this, &GameList::AddEntry, Qt::QueuedConnection);
+    connect(worker, &GameListWorker::Finished, this, &GameList::DonePopulating,
+            Qt::QueuedConnection);
     // Use DirectConnection here because worker->Cancel() is thread-safe and we want it to cancel
     // without delay.
-    connect(this, SIGNAL(ShouldCancelWorker()), worker, SLOT(Cancel()), Qt::DirectConnection);
+    connect(this, &GameList::ShouldCancelWorker, worker, &GameListWorker::Cancel,
+            Qt::DirectConnection);
 
     QThreadPool::globalInstance()->start(worker);
     current_worker = std::move(worker);
@@ -128,8 +147,11 @@ void GameListWorker::AddFstEntriesToGameList(const std::string& dir_path, unsign
             std::vector<u8> smdh;
             loader->ReadIcon(smdh);
 
+            u64 program_id = 0;
+            loader->ReadProgramId(program_id);
+
             emit EntryReady({
-                new GameListItemPath(QString::fromStdString(physical_name), smdh),
+                new GameListItemPath(QString::fromStdString(physical_name), smdh, program_id),
                 new GameListItem(
                     QString::fromStdString(Loader::GetFileTypeString(loader->GetFileType()))),
                 new GameListItemSize(FileUtil::GetSize(physical_name)),
@@ -151,6 +173,6 @@ void GameListWorker::run() {
 }
 
 void GameListWorker::Cancel() {
-    disconnect(this, 0, 0, 0);
+    disconnect(this, nullptr, nullptr, nullptr);
     stop_processing = true;
 }

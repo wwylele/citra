@@ -2,22 +2,23 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#pragma once
+
 #include "core/hle/service/service.h"
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// Namespace SRV
-
+namespace Service {
 namespace SRV {
 
 /// Interface to "srv:" service
-class Interface : public Service::Interface {
+class SRV final : public Interface {
 public:
-    Interface();
-    ~Interface() override;
+    SRV();
+    ~SRV() override;
 
     std::string GetPortName() const override {
         return "srv:";
     }
 };
 
-} // namespace
+} // namespace SRV
+} // namespace Service

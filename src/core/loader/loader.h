@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <boost/optional.hpp>
 #include "common/common_types.h"
 #include "common/file_util.h"
 
@@ -96,6 +97,17 @@ public:
     virtual ResultStatus Load() = 0;
 
     /**
+     * Loads the system mode that this application needs.
+     * This function defaults to 2 (96MB allocated to the application) if it can't read the
+     * information.
+     * @returns Optional with the kernel system mode
+     */
+    virtual boost::optional<u32> LoadKernelSystemMode() {
+        // 96MB allocated to the application.
+        return 2;
+    }
+
+    /**
      * Get the code (typically .code section) of the application
      * @param buffer Reference to buffer to store data
      * @return ResultStatus result of function
@@ -128,6 +140,15 @@ public:
      * @return ResultStatus result of function
      */
     virtual ResultStatus ReadLogo(std::vector<u8>& buffer) {
+        return ResultStatus::ErrorNotImplemented;
+    }
+
+    /**
+     * Get the program id of the application
+     * @param out_program_id Reference to store program id into
+     * @return ResultStatus result of function
+     */
+    virtual ResultStatus ReadProgramId(u64& out_program_id) {
         return ResultStatus::ErrorNotImplemented;
     }
 

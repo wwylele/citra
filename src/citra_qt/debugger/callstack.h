@@ -2,6 +2,8 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#pragma once
+
 #include <QDockWidget>
 #include "ui_callstack.h"
 
@@ -11,7 +13,7 @@ class CallstackWidget : public QDockWidget {
     Q_OBJECT
 
 public:
-    CallstackWidget(QWidget* parent = nullptr);
+    explicit CallstackWidget(QWidget* parent = nullptr);
 
 public slots:
     void OnDebugModeEntered();

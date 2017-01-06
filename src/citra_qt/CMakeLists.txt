@@ -1,17 +1,18 @@
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/CMakeModules)
 
 set(SRCS
             config.cpp
             debugger/callstack.cpp
             debugger/disassembler.cpp
-            debugger/graphics.cpp
-            debugger/graphics_breakpoint_observer.cpp
-            debugger/graphics_breakpoints.cpp
-            debugger/graphics_cmdlists.cpp
-            debugger/graphics_surface.cpp
-            debugger/graphics_tracing.cpp
-            debugger/graphics_vertex_shader.cpp
+            debugger/graphics/graphics.cpp
+            debugger/graphics/graphics_breakpoint_observer.cpp
+            debugger/graphics/graphics_breakpoints.cpp
+            debugger/graphics/graphics_cmdlists.cpp
+            debugger/graphics/graphics_surface.cpp
+            debugger/graphics/graphics_tracing.cpp
+            debugger/graphics/graphics_vertex_shader.cpp
             debugger/profiler.cpp
             debugger/ramview.cpp
             debugger/registers.cpp
@@ -38,14 +39,14 @@ set(HEADERS
             config.h
             debugger/callstack.h
             debugger/disassembler.h
-            debugger/graphics.h
-            debugger/graphics_breakpoint_observer.h
-            debugger/graphics_breakpoints.h
-            debugger/graphics_breakpoints_p.h
-            debugger/graphics_cmdlists.h
-            debugger/graphics_surface.h
-            debugger/graphics_tracing.h
-            debugger/graphics_vertex_shader.h
+            debugger/graphics/graphics.h
+            debugger/graphics/graphics_breakpoint_observer.h
+            debugger/graphics/graphics_breakpoints.h
+            debugger/graphics/graphics_breakpoints_p.h
+            debugger/graphics/graphics_cmdlists.h
+            debugger/graphics/graphics_surface.h
+            debugger/graphics/graphics_tracing.h
+            debugger/graphics/graphics_vertex_shader.h
             debugger/profiler.h
             debugger/ramview.h
             debugger/registers.h
@@ -65,7 +66,6 @@ set(HEADERS
             hotkeys.h
             main.h
             ui_settings.h
-            version.h
             )
 
 set(UIS
@@ -108,27 +108,9 @@ if(UNIX AND NOT APPLE)
     install(TARGETS citra-qt RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}/bin")
 endif()
 
-if (Qt5_FOUND AND MSVC)
-    include(WindowsCopyFiles)
-
-    set(Qt5_DLL_DIR "${Qt5_DIR}/../../../bin")
-    set(Qt5_PLATFORMS_DIR "${Qt5_DIR}/../../../plugins/platforms/")
-    set(DLL_DEST "${CMAKE_BINARY_DIR}/bin/$<CONFIG>/")
-    set(PLATFORMS ${DLL_DEST}platforms/)
-
-    windows_copy_files(citra-qt ${Qt5_DLL_DIR} ${DLL_DEST}
-        icudt*.dll
-        icuin*.dll
-        icuuc*.dll
-        Qt5Core$<$<CONFIG:Debug>:d>.*
-        Qt5Gui$<$<CONFIG:Debug>:d>.*
-        Qt5OpenGL$<$<CONFIG:Debug>:d>.*
-        Qt5Widgets$<$<CONFIG:Debug>:d>.*
-    )
-    windows_copy_files(citra-qt ${Qt5_PLATFORMS_DIR} ${PLATFORMS} qwindows$<$<CONFIG:Debug>:d>.*)
-
-    unset(Qt5_DLL_DIR)
-    unset(Qt5_PLATFORMS_DIR)
-    unset(DLL_DEST)
-    unset(PLATFORMS)
+if (MSVC)
+    include(CopyCitraQt5Deps)
+    include(CopyCitraSDLDeps)
+    copy_citra_Qt5_deps(citra-qt)
+    copy_citra_SDL_deps(citra-qt)
 endif()

@@ -11,10 +11,11 @@
 #include <vector>
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 #include "common/common_types.h"
-#include "core/hle/hle.h"
 #include "core/hle/result.h"
 
 namespace Kernel {
+
+using Handle = u32;
 
 class Thread;
 
@@ -31,22 +32,21 @@ enum KernelHandle : Handle {
 };
 
 enum class HandleType : u32 {
-    Unknown = 0,
-
-    Session = 2,
-    Event = 3,
-    Mutex = 4,
-    SharedMemory = 5,
-    Redirection = 6,
-    Thread = 7,
-    Process = 8,
-    AddressArbiter = 9,
-    Semaphore = 10,
-    Timer = 11,
-    ResourceLimit = 12,
-    CodeSet = 13,
-    ClientPort = 14,
-    ServerPort = 15,
+    Unknown,
+    Event,
+    Mutex,
+    SharedMemory,
+    Thread,
+    Process,
+    AddressArbiter,
+    Semaphore,
+    Timer,
+    ResourceLimit,
+    CodeSet,
+    ClientPort,
+    ServerPort,
+    ClientSession,
+    ServerSession,
 };
 
 enum {
@@ -82,23 +82,23 @@ public:
      */
     bool IsWaitable() const {
         switch (GetHandleType()) {
-        case HandleType::Session:
-        case HandleType::ServerPort:
         case HandleType::Event:
         case HandleType::Mutex:
         case HandleType::Thread:
         case HandleType::Semaphore:
         case HandleType::Timer:
+        case HandleType::ServerPort:
+        case HandleType::ServerSession:
             return true;
 
         case HandleType::Unknown:
         case HandleType::SharedMemory:
-        case HandleType::Redirection:
         case HandleType::Process:
         case HandleType::AddressArbiter:
         case HandleType::ResourceLimit:
         case HandleType::CodeSet:
         case HandleType::ClientPort:
+        case HandleType::ClientSession:
             return false;
         }
     }
@@ -152,8 +152,14 @@ public:
      */
     void RemoveWaitingThread(Thread* thread);
 
-    /// Wake up all threads waiting on this object
+    /**
+     * Wake up all threads waiting on this object that can be awoken, in priority order,
+     * and set the synchronization result and output of the thread.
+     */
     void WakeupAllWaitingThreads();
+
+    /// Obtains the highest priority thread that is ready to run from this object's waiting list.
+    SharedPtr<Thread> GetHighestPriorityReadyThread();
 
     /// Get a const reference to the waiting threads list for debug use
     const std::vector<SharedPtr<Thread>>& GetWaitingThreads() const;
@@ -286,8 +292,8 @@ private:
 
 extern HandleTable g_handle_table;
 
-/// Initialize the kernel
-void Init();
+/// Initialize the kernel with the specified system mode.
+void Init(u32 system_mode);
 
 /// Shutdown the kernel
 void Shutdown();

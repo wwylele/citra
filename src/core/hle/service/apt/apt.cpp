@@ -396,6 +396,15 @@ void StartLibraryApplet(Service::Interface* self) {
     cmd_buff[1] = applet->Start(parameter).raw;
 }
 
+void CancelLibraryApplet(Service::Interface* self) {
+    u32* cmd_buff = Kernel::GetCommandBuffer();
+    u32 exiting = cmd_buff[1] & 0xFF;
+
+    cmd_buff[1] = 1; // TODO: Find the return code meaning
+
+    LOG_WARNING(Service_APT, "(STUBBED) called exiting=%u", exiting);
+}
+
 void SetScreenCapPostPermission(Service::Interface* self) {
     u32* cmd_buff = Kernel::GetCommandBuffer();
 
@@ -449,12 +458,16 @@ void GetStartupArgument(Service::Interface* self) {
         return;
     }
 
-    LOG_WARNING(Service_APT, "(stubbed) called startup_argument_type=%u , parameter_size=0x%08x , "
-                             "parameter_value=0x%08x",
-                startup_argument_type, parameter_size, Memory::Read32(cmd_buff[41]));
+    u32 addr = cmd_buff[65];
+    if (addr && parameter_size) {
+        Memory::ZeroBlock(addr, parameter_size);
+    }
+
+    LOG_WARNING(Service_APT, "(stubbed) called startup_argument_type=%u , parameter_size=0x%08x",
+                startup_argument_type, parameter_size);
 
     cmd_buff[1] = RESULT_SUCCESS.raw;
-    cmd_buff[2] = (parameter_size > 0) ? 1 : 0;
+    cmd_buff[2] = 0;
 }
 
 void CheckNew3DSApp(Service::Interface* self) {
@@ -523,7 +536,7 @@ void Init() {
     notification_event = Kernel::Event::Create(Kernel::ResetType::OneShot, "APT_U:Notification");
     parameter_event = Kernel::Event::Create(Kernel::ResetType::OneShot, "APT_U:Start");
 
-    next_parameter.signal = static_cast<u32>(SignalType::AppJustStarted);
+    next_parameter.signal = static_cast<u32>(SignalType::Wakeup);
     next_parameter.destination_id = 0x300;
 }
 

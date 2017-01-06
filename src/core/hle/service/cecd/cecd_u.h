@@ -9,9 +9,9 @@
 namespace Service {
 namespace CECD {
 
-class CECD_U_Interface : public Interface {
+class CECD_U : public Interface {
 public:
-    CECD_U_Interface();
+    CECD_U();
 
     std::string GetPortName() const override {
         return "cecd:u";

@@ -10,7 +10,15 @@
 
 namespace Settings {
 
+enum class LayoutOption {
+    Default,
+    SingleScreen,
+    LargeScreen,
+    Custom,
+};
+
 namespace NativeInput {
+
 enum Values {
     // directly mapped keys
     A,
@@ -70,7 +78,6 @@ struct Values {
 
     // Core
     bool use_cpu_jit;
-    int frame_skip;
 
     // Data Storage
     bool use_virtual_sd;
@@ -83,6 +90,10 @@ struct Values {
     bool use_shader_jit;
     bool use_scaled_resolution;
     bool use_vsync;
+    bool toggle_framelimit;
+
+    LayoutOption layout_option;
+    bool swap_screen;
 
     float bg_red;
     float bg_green;
@@ -98,6 +109,10 @@ struct Values {
     bool use_gdbstub;
     u16 gdbstub_port;
 } extern values;
+
+// a special value for Values::region_value indicating that citra will automatically select a region
+// value to fit the region lockout info of the game
+static constexpr int REGION_VALUE_AUTO_SELECT = -1;
 
 void Apply();
 }

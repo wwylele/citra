@@ -171,7 +171,8 @@ struct CachedSurface {
     OGLTexture texture;
     u32 width;
     u32 height;
-    u32 stride = 0;
+    /// Stride between lines, in pixels. Only valid for images in linear format.
+    u32 pixel_stride = 0;
     float res_scale_width = 1.f;
     float res_scale_height = 1.f;
 
@@ -186,7 +187,7 @@ public:
     ~RasterizerCacheOpenGL();
 
     /// Blits one texture to another
-    bool BlitTextures(GLuint src_tex, GLuint dst_tex, CachedSurface::SurfaceType type,
+    void BlitTextures(GLuint src_tex, GLuint dst_tex, CachedSurface::SurfaceType type,
                       const MathUtil::Rectangle<int>& src_rect,
                       const MathUtil::Rectangle<int>& dst_rect);
 

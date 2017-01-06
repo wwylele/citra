@@ -14,6 +14,9 @@ class Interface;
 
 namespace APT {
 
+/// Each APT service can only have up to 2 sessions connected at the same time.
+static const u32 MaxAPTSessions = 2;
+
 /// Holds information about the parameters used in Send/Glance/ReceiveParameter
 struct MessageParameter {
     u32 sender_id = 0;
@@ -46,12 +49,23 @@ static_assert(sizeof(CaptureBufferInfo) == 0x20, "CaptureBufferInfo struct has i
 /// Signals used by APT functions
 enum class SignalType : u32 {
     None = 0x0,
-    AppJustStarted = 0x1,
-    LibAppJustStarted = 0x2,
-    LibAppFinished = 0x3,
-    LibAppClosed = 0xA,
-    ReturningToApp = 0xB,
-    ExitingApp = 0xC,
+    Wakeup = 0x1,
+    Request = 0x2,
+    Response = 0x3,
+    Exit = 0x4,
+    Message = 0x5,
+    HomeButtonSingle = 0x6,
+    HomeButtonDouble = 0x7,
+    DspSleep = 0x8,
+    DspWakeup = 0x9,
+    WakeupByExit = 0xA,
+    WakeupByPause = 0xB,
+    WakeupByCancel = 0xC,
+    WakeupByCancelAll = 0xD,
+    WakeupByPowerButtonClick = 0xE,
+    WakeupToJumpHome = 0xF,
+    RequestForSysApplet = 0x10,
+    WakeupToLaunchApplication = 0x11,
 };
 
 /// App Id's used by APT functions
@@ -381,13 +395,26 @@ void PreloadLibraryApplet(Service::Interface* self);
 void StartLibraryApplet(Service::Interface* self);
 
 /**
+ * APT::CancelLibraryApplet service function
+ *  Inputs:
+ *      0 : Command header [0x003B0040]
+ *      1 : u8, Application exiting (0 = not exiting, 1 = exiting)
+ *  Outputs:
+ *      0 : Header code
+ *      1 : Result code
+ */
+void CancelLibraryApplet(Service::Interface* self);
+
+/**
  * APT::GetStartupArgument service function
  *  Inputs:
  *      1 : Parameter Size (capped to 0x300)
  *      2 : StartupArgumentType
+ *      65 : Output buffer for startup argument
  *  Outputs:
  *      0 : Return header
- *      1 : u8, Exists (0 = does not exist, 1 = exists)
+ *      1 : Result of function, 0 on success, otherwise error code
+ *      2 : u8, Exists (0 = does not exist, 1 = exists)
  */
 void GetStartupArgument(Service::Interface* self);
 

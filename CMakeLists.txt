@@ -1,5 +1,6 @@
 # CMake 3.2 required for cmake to know the right flags for CXX standard on OSX
 cmake_minimum_required(VERSION 3.2)
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/CMakeModules)
 
 function(download_bundled_external remote_path lib_name prefix_var)
     set(prefix "${CMAKE_BINARY_DIR}/externals/${lib_name}")
@@ -68,6 +69,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if (NOT MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-attributes")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+
+    if (MINGW)
+        add_definitions(-DMINGW_HAS_SECURE_API)
+        # Microprofile causes crashes when launching titles on MinGW
+        add_definitions(-DMICROPROFILE_ENABLED=0)
+
+        if (MINGW_STATIC_BUILD)
+            add_definitions(-DQT_STATICPLUGIN)
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -static")
+            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+        endif()
+    endif()
 else()
     # Silence "deprecation" warnings
     add_definitions(/D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /D_SCL_SECURE_NO_WARNINGS)
@@ -147,7 +160,7 @@ if (ENABLE_SDL2)
     if (CITRA_USE_BUNDLED_SDL2)
         # Detect toolchain and platform
         if (MSVC14 AND ARCHITECTURE_x86_64)
-            set(SDL2_VER "SDL2-2.0.4")
+            set(SDL2_VER "SDL2-2.0.5")
         else()
             message(FATAL_ERROR "No bundled SDL2 binaries for your toolchain. Disable CITRA_USE_BUNDLED_SDL2 and provide your own.")
         endif()
@@ -171,17 +184,19 @@ IF (APPLE)
     FIND_LIBRARY(COCOA_LIBRARY Cocoa)           # Umbrella framework for everything GUI-related
     set(PLATFORM_LIBRARIES ${COCOA_LIBRARY} ${IOKIT_LIBRARY} ${COREVIDEO_LIBRARY})
 
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++")
-ELSEIF(MINGW)
-    # PSAPI is the Process Status API
-    set(PLATFORM_LIBRARIES winmm ws2_32 psapi)
-
-    # WSAPoll functionality doesn't exist before WinNT 6.x (Vista and up)
-    add_definitions(-D_WIN32_WINNT=0x0600)
-ELSEIF(WIN32)
+    if (CMAKE_CXX_COMPILER_ID STREQUAL Clang)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++")
+    endif()
+ELSEIF (WIN32)
+    # WSAPoll and SHGetKnownFolderPath (AppData/Roaming) didn't exist before WinNT 6.x (Vista)
+    add_definitions(-D_WIN32_WINNT=0x0600 -DWINVER=0x0600)
     set(PLATFORM_LIBRARIES winmm ws2_32)
-ELSEIF(CMAKE_SYSTEM_NAME MATCHES "^(Linux|kFreeBSD|GNU|SunOS)$")
+    IF (MINGW)
+        # PSAPI is the Process Status API
+        set(PLATFORM_LIBRARIES ${PLATFORM_LIBRARIES} psapi imm32 version)
+    ENDIF (MINGW)
+ELSEIF (CMAKE_SYSTEM_NAME MATCHES "^(Linux|kFreeBSD|GNU|SunOS)$")
     set(PLATFORM_LIBRARIES rt)
 ENDIF (APPLE)
 
@@ -238,9 +253,16 @@ get_git_head_revision(GIT_REF_SPEC GIT_REV)
 git_describe(GIT_DESC --always --long --dirty)
 git_branch_name(GIT_BRANCH)
 
+# configure the bintray travis release json
+string(TIMESTAMP BUILD_DATE "%Y-%m-%d")
+configure_file("${CMAKE_SOURCE_DIR}/.travis.descriptor.json.in" "${CMAKE_SOURCE_DIR}/.travis.descriptor.json" @ONLY)
+unset(BUILD_DATE)
+
 set(INI_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/externals/inih")
 include_directories(${INI_PREFIX})
 add_subdirectory(${INI_PREFIX})
+
+add_subdirectory(externals)
 
 option(DYNARMIC_TESTS OFF)
 add_subdirectory(externals/dynarmic)
@@ -276,4 +298,16 @@ if(ENABLE_QT AND UNIX AND NOT APPLE)
             DESTINATION "${CMAKE_INSTALL_PREFIX}/share/pixmaps")
     install(FILES "${CMAKE_SOURCE_DIR}/dist/citra.xml"
             DESTINATION "${CMAKE_INSTALL_PREFIX}/share/mime/packages")
+endif()
+
+if(UNIX)
+    if(ENABLE_SDL2)
+        install(FILES "${CMAKE_SOURCE_DIR}/dist/citra.6"
+                DESTINATION "${CMAKE_INSTALL_PREFIX}/share/man/man6")
+    endif()
+
+    if (ENABLE_QT)
+        install(FILES "${CMAKE_SOURCE_DIR}/dist/citra-qt.6"
+                DESTINATION "${CMAKE_INSTALL_PREFIX}/share/man/man6")
+    endif()
 endif()

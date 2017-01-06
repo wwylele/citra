@@ -59,7 +59,6 @@ void Config::ReadValues() {
 
     // Core
     Settings::values.use_cpu_jit = sdl2_config->GetBoolean("Core", "use_cpu_jit", true);
-    Settings::values.frame_skip = sdl2_config->GetInteger("Core", "frame_skip", 0);
 
     // Renderer
     Settings::values.use_hw_renderer = sdl2_config->GetBoolean("Renderer", "use_hw_renderer", true);
@@ -67,10 +66,17 @@ void Config::ReadValues() {
     Settings::values.use_scaled_resolution =
         sdl2_config->GetBoolean("Renderer", "use_scaled_resolution", false);
     Settings::values.use_vsync = sdl2_config->GetBoolean("Renderer", "use_vsync", false);
+    Settings::values.toggle_framelimit =
+        sdl2_config->GetBoolean("Renderer", "toggle_framelimit", true);
 
     Settings::values.bg_red = (float)sdl2_config->GetReal("Renderer", "bg_red", 1.0);
     Settings::values.bg_green = (float)sdl2_config->GetReal("Renderer", "bg_green", 1.0);
     Settings::values.bg_blue = (float)sdl2_config->GetReal("Renderer", "bg_blue", 1.0);
+
+    // Layout
+    Settings::values.layout_option =
+        static_cast<Settings::LayoutOption>(sdl2_config->GetInteger("Layout", "layout_option", 0));
+    Settings::values.swap_screen = sdl2_config->GetBoolean("Layout", "swap_screen", false);
 
     // Audio
     Settings::values.sink_id = sdl2_config->Get("Audio", "output_engine", "auto");
@@ -83,7 +89,8 @@ void Config::ReadValues() {
 
     // System
     Settings::values.is_new_3ds = sdl2_config->GetBoolean("System", "is_new_3ds", false);
-    Settings::values.region_value = sdl2_config->GetInteger("System", "region_value", 1);
+    Settings::values.region_value =
+        sdl2_config->GetInteger("System", "region_value", Settings::REGION_VALUE_AUTO_SELECT);
 
     // Miscellaneous
     Settings::values.log_filter = sdl2_config->Get("Miscellaneous", "log_filter", "*:Info");

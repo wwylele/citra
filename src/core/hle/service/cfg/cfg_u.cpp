@@ -20,9 +20,10 @@ const Interface::FunctionInfo FunctionTable[] = {
     {0x00080080, nullptr, "GoThroughTable"},
     {0x00090040, GetCountryCodeString, "GetCountryCodeString"},
     {0x000A0040, GetCountryCodeID, "GetCountryCodeID"},
+    {0x000B0000, nullptr, "IsFangateSupported"},
 };
 
-CFG_U_Interface::CFG_U_Interface() {
+CFG_U::CFG_U() {
     Register(FunctionTable);
 }
 

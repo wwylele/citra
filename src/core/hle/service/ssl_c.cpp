@@ -6,15 +6,13 @@
 #include "common/common_types.h"
 #include "core/hle/service/ssl_c.h"
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// Namespace SSL_C
-
-namespace SSL_C {
+namespace Service {
+namespace SSL {
 
 // TODO: Implement a proper CSPRNG in the future when actual security is needed
 static std::mt19937 rand_gen;
 
-static void Initialize(Service::Interface* self) {
+static void Initialize(Interface* self) {
     u32* cmd_buff = Kernel::GetCommandBuffer();
 
     // Seed random number generator when the SSL service is initialized
@@ -25,7 +23,7 @@ static void Initialize(Service::Interface* self) {
     cmd_buff[1] = RESULT_SUCCESS.raw;
 }
 
-static void GenerateRandomData(Service::Interface* self) {
+static void GenerateRandomData(Interface* self) {
     u32* cmd_buff = Kernel::GetCommandBuffer();
 
     u32 size = cmd_buff[1];
@@ -66,6 +64,7 @@ const Interface::FunctionInfo FunctionTable[] = {
     {0x00050082, nullptr, "AddTrustedRootCA"},
     {0x00060080, nullptr, "RootCertChainAddDefaultCert"},
     {0x00070080, nullptr, "RootCertChainRemoveCert"},
+    {0x000D0084, nullptr, "OpenClientCertContext"},
     {0x000E0040, nullptr, "OpenDefaultClientCertContext"},
     {0x000F0040, nullptr, "CloseClientCertContext"},
     {0x00110042, GenerateRandomData, "GenerateRandomData"},
@@ -73,19 +72,19 @@ const Interface::FunctionInfo FunctionTable[] = {
     {0x00130040, nullptr, "StartConnection"},
     {0x00140040, nullptr, "StartConnectionGetOut"},
     {0x00150082, nullptr, "Read"},
+    {0x00160082, nullptr, "ReadPeek"},
     {0x00170082, nullptr, "Write"},
     {0x00180080, nullptr, "ContextSetRootCertChain"},
     {0x00190080, nullptr, "ContextSetClientCert"},
     {0x001B0080, nullptr, "ContextClearOpt"},
+    {0x001C00C4, nullptr, "ContextGetProtocolCipher"},
     {0x001E0040, nullptr, "DestroyContext"},
     {0x001F0082, nullptr, "ContextInitSharedmem"},
 };
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// Interface class
-
-Interface::Interface() {
+SSL_C::SSL_C() {
     Register(FunctionTable);
 }
 
-} // namespace
+} // namespace SSL_C
+} // namespace Service

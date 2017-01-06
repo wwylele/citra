@@ -2,11 +2,14 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include <boost/range/algorithm_ext/erase.hpp>
+
 #include "common/logging/log.h"
 #include "common/string_util.h"
+
+#include "core/hle/kernel/server_port.h"
 #include "core/hle/service/ac_u.h"
-#include "core/hle/service/act_a.h"
-#include "core/hle/service/act_u.h"
+#include "core/hle/service/act/act.h"
 #include "core/hle/service/am/am.h"
 #include "core/hle/service/apt/apt.h"
 #include "core/hle/service/boss/boss.h"
@@ -26,13 +29,16 @@
 #include "core/hle/service/ir/ir.h"
 #include "core/hle/service/ldr_ro/ldr_ro.h"
 #include "core/hle/service/mic_u.h"
+#include "core/hle/service/mvd/mvd.h"
 #include "core/hle/service/ndm/ndm.h"
 #include "core/hle/service/news/news.h"
+#include "core/hle/service/nfc/nfc.h"
 #include "core/hle/service/nim/nim.h"
 #include "core/hle/service/ns_s.h"
-#include "core/hle/service/nwm_uds.h"
+#include "core/hle/service/nwm/nwm.h"
 #include "core/hle/service/pm_app.h"
 #include "core/hle/service/ptm/ptm.h"
+#include "core/hle/service/qtm/qtm.h"
 #include "core/hle/service/service.h"
 #include "core/hle/service/soc_u.h"
 #include "core/hle/service/srv.h"
@@ -41,8 +47,8 @@
 
 namespace Service {
 
-std::unordered_map<std::string, Kernel::SharedPtr<Interface>> g_kernel_named_ports;
-std::unordered_map<std::string, Kernel::SharedPtr<Interface>> g_srv_services;
+std::unordered_map<std::string, Kernel::SharedPtr<Kernel::ClientPort>> g_kernel_named_ports;
+std::unordered_map<std::string, Kernel::SharedPtr<Kernel::ClientPort>> g_srv_services;
 
 /**
  * Creates a function string for logging, complete with the name (or header code, depending
@@ -61,7 +67,23 @@ static std::string MakeFunctionString(const char* name, const char* port_name,
     return function_string;
 }
 
-ResultVal<bool> Interface::SyncRequest() {
+void SessionRequestHandler::ClientConnected(
+    Kernel::SharedPtr<Kernel::ServerSession> server_session) {
+    connected_sessions.push_back(server_session);
+}
+
+void SessionRequestHandler::ClientDisconnected(
+    Kernel::SharedPtr<Kernel::ServerSession> server_session) {
+    boost::range::remove_erase(connected_sessions, server_session);
+}
+
+Interface::Interface(u32 max_sessions) : max_sessions(max_sessions) {}
+Interface::~Interface() = default;
+
+void Interface::HandleSyncRequest(Kernel::SharedPtr<Kernel::ServerSession> server_session) {
+    // TODO(Subv): Make use of the server_session in the HLE service handlers to distinguish which
+    // session triggered each command.
+
     u32* cmd_buff = Kernel::GetCommandBuffer();
     auto itr = m_functions.find(cmd_buff[0]);
 
@@ -75,14 +97,12 @@ ResultVal<bool> Interface::SyncRequest() {
 
         // TODO(bunnei): Hack - ignore error
         cmd_buff[1] = 0;
-        return MakeResult<bool>(false);
+        return;
     }
     LOG_TRACE(Service, "%s",
               MakeFunctionString(itr->second.name, GetPortName().c_str(), cmd_buff).c_str());
 
     itr->second.func(this);
-
-    return MakeResult<bool>(false); // TODO: Implement return from actual function
 }
 
 void Interface::Register(const FunctionInfo* functions, size_t n) {
@@ -97,72 +117,81 @@ void Interface::Register(const FunctionInfo* functions, size_t n) {
 // Module interface
 
 static void AddNamedPort(Interface* interface_) {
-    g_kernel_named_ports.emplace(interface_->GetPortName(), interface_);
+    auto ports =
+        Kernel::ServerPort::CreatePortPair(interface_->GetMaxSessions(), interface_->GetPortName(),
+                                           std::shared_ptr<Interface>(interface_));
+    auto client_port = std::get<Kernel::SharedPtr<Kernel::ClientPort>>(ports);
+    g_kernel_named_ports.emplace(interface_->GetPortName(), std::move(client_port));
 }
 
 void AddService(Interface* interface_) {
-    g_srv_services.emplace(interface_->GetPortName(), interface_);
+    auto ports =
+        Kernel::ServerPort::CreatePortPair(interface_->GetMaxSessions(), interface_->GetPortName(),
+                                           std::shared_ptr<Interface>(interface_));
+    auto client_port = std::get<Kernel::SharedPtr<Kernel::ClientPort>>(ports);
+    g_srv_services.emplace(interface_->GetPortName(), std::move(client_port));
 }
 
 /// Initialize ServiceManager
 void Init() {
-    AddNamedPort(new SRV::Interface);
-    AddNamedPort(new ERR_F::Interface);
+    AddNamedPort(new SRV::SRV);
+    AddNamedPort(new ERR::ERR_F);
 
-    Service::FS::ArchiveInit();
-    Service::AM::Init();
-    Service::APT::Init();
-    Service::BOSS::Init();
-    Service::CAM::Init();
-    Service::CECD::Init();
-    Service::CFG::Init();
-    Service::DLP::Init();
-    Service::FRD::Init();
-    Service::HID::Init();
-    Service::IR::Init();
-    Service::NEWS::Init();
-    Service::NDM::Init();
-    Service::NIM::Init();
-    Service::PTM::Init();
+    FS::ArchiveInit();
+    ACT::Init();
+    AM::Init();
+    APT::Init();
+    BOSS::Init();
+    CAM::Init();
+    CECD::Init();
+    CFG::Init();
+    DLP::Init();
+    FRD::Init();
+    HID::Init();
+    IR::Init();
+    MVD::Init();
+    NDM::Init();
+    NEWS::Init();
+    NFC::Init();
+    NIM::Init();
+    NWM::Init();
+    PTM::Init();
+    QTM::Init();
 
-    AddService(new AC_U::Interface);
-    AddService(new ACT_A::Interface);
-    AddService(new ACT_U::Interface);
-    AddService(new CSND_SND::Interface);
+    AddService(new AC::AC_U);
+    AddService(new CSND::CSND_SND);
     AddService(new DSP_DSP::Interface);
-    AddService(new GSP_GPU::Interface);
-    AddService(new GSP_LCD::Interface);
-    AddService(new HTTP_C::Interface);
-    AddService(new LDR_RO::Interface);
-    AddService(new MIC_U::Interface);
-    AddService(new NS_S::Interface);
-    AddService(new NWM_UDS::Interface);
-    AddService(new PM_APP::Interface);
-    AddService(new SOC_U::Interface);
-    AddService(new SSL_C::Interface);
-    AddService(new Y2R_U::Interface);
+    AddService(new GSP::GSP_GPU);
+    AddService(new GSP::GSP_LCD);
+    AddService(new HTTP::HTTP_C);
+    AddService(new LDR::LDR_RO);
+    AddService(new MIC::MIC_U);
+    AddService(new NS::NS_S);
+    AddService(new PM::PM_APP);
+    AddService(new SOC::SOC_U);
+    AddService(new SSL::SSL_C);
+    AddService(new Y2R::Y2R_U);
 
     LOG_DEBUG(Service, "initialized OK");
 }
 
 /// Shutdown ServiceManager
 void Shutdown() {
-
-    Service::PTM::Shutdown();
-    Service::NDM::Shutdown();
-    Service::NIM::Shutdown();
-    Service::NEWS::Shutdown();
-    Service::IR::Shutdown();
-    Service::HID::Shutdown();
-    Service::FRD::Shutdown();
-    Service::DLP::Shutdown();
-    Service::CFG::Shutdown();
-    Service::CECD::Shutdown();
-    Service::CAM::Shutdown();
-    Service::BOSS::Shutdown();
-    Service::APT::Shutdown();
-    Service::AM::Shutdown();
-    Service::FS::ArchiveShutdown();
+    PTM::Shutdown();
+    NIM::Shutdown();
+    NEWS::Shutdown();
+    NDM::Shutdown();
+    IR::Shutdown();
+    HID::Shutdown();
+    FRD::Shutdown();
+    DLP::Shutdown();
+    CFG::Shutdown();
+    CECD::Shutdown();
+    CAM::Shutdown();
+    BOSS::Shutdown();
+    APT::Shutdown();
+    AM::Shutdown();
+    FS::ArchiveShutdown();
 
     g_srv_services.clear();
     g_kernel_named_ports.clear();

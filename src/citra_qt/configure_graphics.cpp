@@ -3,8 +3,8 @@
 // Refer to the license.txt file included.
 
 #include "citra_qt/configure_graphics.h"
+#include "core/core.h"
 #include "core/settings.h"
-#include "core/system.h"
 #include "ui_configure_graphics.h"
 
 ConfigureGraphics::ConfigureGraphics(QWidget* parent)
@@ -13,7 +13,7 @@ ConfigureGraphics::ConfigureGraphics(QWidget* parent)
     ui->setupUi(this);
     this->setConfiguration();
 
-    ui->toggle_vsync->setEnabled(!System::IsPoweredOn());
+    ui->toggle_vsync->setEnabled(!Core::System::GetInstance().IsPoweredOn());
 }
 
 ConfigureGraphics::~ConfigureGraphics() {}
@@ -23,6 +23,9 @@ void ConfigureGraphics::setConfiguration() {
     ui->toggle_shader_jit->setChecked(Settings::values.use_shader_jit);
     ui->toggle_scaled_resolution->setChecked(Settings::values.use_scaled_resolution);
     ui->toggle_vsync->setChecked(Settings::values.use_vsync);
+    ui->toggle_framelimit->setChecked(Settings::values.toggle_framelimit);
+    ui->layout_combobox->setCurrentIndex(static_cast<int>(Settings::values.layout_option));
+    ui->swap_screen->setChecked(Settings::values.swap_screen);
 }
 
 void ConfigureGraphics::applyConfiguration() {
@@ -30,5 +33,9 @@ void ConfigureGraphics::applyConfiguration() {
     Settings::values.use_shader_jit = ui->toggle_shader_jit->isChecked();
     Settings::values.use_scaled_resolution = ui->toggle_scaled_resolution->isChecked();
     Settings::values.use_vsync = ui->toggle_vsync->isChecked();
+    Settings::values.toggle_framelimit = ui->toggle_framelimit->isChecked();
+    Settings::values.layout_option =
+        static_cast<Settings::LayoutOption>(ui->layout_combobox->currentIndex());
+    Settings::values.swap_screen = ui->swap_screen->isChecked();
     Settings::Apply();
 }
