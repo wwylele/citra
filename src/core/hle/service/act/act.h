@@ -5,7 +5,13 @@
 #pragma once
 
 namespace Service {
+
+class Interface;
+
 namespace ACT {
+
+void Initialize(Service::Interface* self);
+void GetAccountDataBlock(Service::Interface* self);
 
 /// Initializes all ACT services
 void Init();

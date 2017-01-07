@@ -10,9 +10,9 @@ namespace ACT {
 
 const Interface::FunctionInfo FunctionTable[] = {
     // act:u shared commands
-    {0x00010084, nullptr, "Initialize"},
+    {0x00010084, Initialize, "Initialize"},
     {0x00020040, nullptr, "GetErrorCode"},
-    {0x000600C2, nullptr, "GetAccountDataBlock"},
+    {0x000600C2, GetAccountDataBlock, "GetAccountDataBlock"},
     {0x000B0042, nullptr, "AcquireEulaList"},
     {0x000D0040, nullptr, "GenerateUuid"},
     // act:a
