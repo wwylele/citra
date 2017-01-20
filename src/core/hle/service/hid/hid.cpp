@@ -48,6 +48,7 @@ constexpr u64 gyroscope_update_ticks = BASE_CLOCK_RATE_ARM11 / 101;
 static bool is_device_loaded = false;
 static std::array<std::unique_ptr<Input::ButtonDevice>, Settings::NativeButton::NUM_BUTTONS_HID>
     buttons;
+static std::unique_ptr<Input::AnalogDevice> circle_pad;
 
 static PadState GetCirclePadDirectionState(s16 circle_pad_x, s16 circle_pad_y) {
     // 30 degree and 60 degree are angular thresholds for directions
@@ -98,8 +99,11 @@ static void UpdatePadCallback(u64 userdata, int cycles_late) {
     state.select.Assign(buttons[Select - BUTTON_HID_BEGIN]->GetStatus());
 
     // Get current circle pad position and update circle pad direction
-    s16 circle_pad_x, circle_pad_y;
-    std::tie(circle_pad_x, circle_pad_y) = VideoCore::g_emu_window->GetCirclePadState();
+    float circle_pad_x_f, circle_pad_y_f;
+    std::tie(circle_pad_x_f, circle_pad_y_f) = circle_pad->GetStatus();
+    constexpr int MAX_CIRCLEPAD_POS = 0x9C; // Max value for a circle pad position
+    s16 circle_pad_x = static_cast<s16>(circle_pad_x_f * MAX_CIRCLEPAD_POS);
+    s16 circle_pad_y = static_cast<s16>(circle_pad_y_f * MAX_CIRCLEPAD_POS);
     state.hex |= GetCirclePadDirectionState(circle_pad_x, circle_pad_y).hex;
 
     mem->pad.current_state.hex = state.hex;
@@ -221,6 +225,8 @@ static void LoadInputDevices() {
     std::transform(Settings::values.buttons.begin() + Settings::NativeButton::BUTTON_HID_BEGIN,
                    Settings::values.buttons.begin() + Settings::NativeButton::BUTTON_HID_END,
                    buttons.begin(), Input::CreateDevice<Input::ButtonDevice>);
+    circle_pad = Input::CreateDevice<Input::AnalogDevice>(
+        Settings::values.analogs[Settings::NativeAnalog::CirclePad]);
 
     is_device_loaded = true;
 }
@@ -229,6 +235,7 @@ static void UnloadInputDevices() {
     for (auto& button : buttons) {
         button.reset();
     }
+    circle_pad.reset();
 
     is_device_loaded = false;
 }
