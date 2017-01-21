@@ -12,6 +12,7 @@
 #include "common/thread.h"
 #include "core/frontend/emu_window.h"
 #include "core/frontend/motion_emu.h"
+#include "input_common/keyboard.h"
 
 class QKeyEvent;
 class QScreen;
@@ -127,7 +128,7 @@ public:
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
 
-    void ReloadSetKeymaps() override;
+    void ReloadSetKeymaps();
 
     void OnClientAreaResized(unsigned width, unsigned height);
 
@@ -152,8 +153,7 @@ private:
 
     QByteArray geometry;
 
-    /// Device id of keyboard for use with KeyMap
-    int keyboard_id;
+    std::shared_ptr<InputCommon::Keyboard> keyboard;
 
     EmuThread* emu_thread;
 
