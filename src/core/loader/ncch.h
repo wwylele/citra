@@ -59,6 +59,10 @@ public:
 
     ResultStatus ReadTitle(std::string& title) override;
 
+    boost::optional<AesContext> GetRomFSAesContext() override {
+        return base_ncch.romfs_aes;
+    }
+
 private:
     /**
      * Loads .code section into memory for booting

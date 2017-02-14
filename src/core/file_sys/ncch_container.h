@@ -13,6 +13,7 @@
 #include "common/file_util.h"
 #include "common/swap.h"
 #include "core/core.h"
+#include "core/loader/loader.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// NCCH header (Note: "NCCH" appears to be a publicly unknown acronym)
@@ -162,6 +163,8 @@ static_assert(sizeof(ExHeader_Header) == 0x800, "ExHeader structure size is wron
 
 namespace FileSys {
 
+using namespace Loader;
+
 /**
  * Helper which implements an interface to deal with NCCH containers which can
  * contain ExeFS archives or RomFS archives for games or other applications.
@@ -253,6 +256,9 @@ public:
     ExeFs_Header exefs_header;
     ExHeader_Header exheader_header;
 
+    boost::optional<AesContext> exefs_aes;
+    boost::optional<AesContext> exerfs_code_aes;
+    boost::optional<AesContext> romfs_aes;
 private:
     bool has_header = false;
     bool has_exheader = false;

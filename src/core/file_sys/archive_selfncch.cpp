@@ -175,7 +175,7 @@ private:
                 std::make_unique<RomFSDelayGenerator>();
             return MakeResult<std::unique_ptr<FileBackend>>(
                 std::make_unique<IVFCFile>(ncch_data.romfs_file, ncch_data.romfs_offset,
-                                           ncch_data.romfs_size, std::move(delay_generator)));
+                                           ncch_data.romfs_size, std::move(delay_generator), ncch_data.aes_context));
         } else {
             LOG_INFO(Service_FS, "Unable to read RomFS");
             return ERROR_ROMFS_NOT_FOUND;
@@ -258,6 +258,7 @@ void ArchiveFactory_SelfNCCH::Register(Loader::AppLoader& app_loader) {
         app_loader.ReadRomFS(romfs_file_, data.romfs_offset, data.romfs_size)) {
 
         data.romfs_file = std::move(romfs_file_);
+        data.aes_context = app_loader.GetRomFSAesContext();
     }
 
     std::shared_ptr<FileUtil::IOFile> update_romfs_file;
