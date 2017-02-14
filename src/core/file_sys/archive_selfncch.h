@@ -29,6 +29,7 @@ struct NCCHData {
     std::shared_ptr<FileUtil::IOFile> update_romfs_file;
     u64 update_romfs_offset = 0;
     u64 update_romfs_size = 0;
+    boost::optional<Loader::AesContext> aes_context;
 };
 
 /// File system interface to the SelfNCCH archive

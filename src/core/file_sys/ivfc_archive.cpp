@@ -5,8 +5,11 @@
 #include <cstring>
 #include <memory>
 #include <utility>
+#include <cryptopp/aes.h>
+#include <cryptopp/modes.h>
 #include "common/common_types.h"
 #include "common/logging/log.h"
+#include "common/string_util.h"
 #include "core/file_sys/ivfc_archive.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -91,8 +94,9 @@ u64 IVFCArchive::GetFreeBytes() const {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 IVFCFile::IVFCFile(std::shared_ptr<FileUtil::IOFile> file, u64 offset, u64 size,
-                   std::unique_ptr<DelayGenerator> delay_generator_)
-    : romfs_file(std::move(file)), data_offset(offset), data_size(size) {
+                   std::unique_ptr<DelayGenerator> delay_generator_,
+                   boost::optional<Loader::AesContext> aes_context_)
+    : romfs_file(std::move(file)), data_offset(offset), data_size(size), aes_context(aes_context_) {
     delay_generator = std::move(delay_generator_);
 }
 
@@ -101,7 +105,15 @@ ResultVal<size_t> IVFCFile::Read(const u64 offset, const size_t length, u8* buff
     romfs_file->Seek(data_offset + offset, SEEK_SET);
     size_t read_length = (size_t)std::min((u64)length, data_size - offset);
 
-    return MakeResult<size_t>(romfs_file->ReadBytes(buffer, read_length));
+    read_length = romfs_file->ReadBytes(buffer, read_length);
+    if (aes_context) {
+        CryptoPP::CTR_Mode<CryptoPP::AES>::Decryption dec;
+        dec.SetKeyWithIV(aes_context->key.data(), 16, aes_context->ctr.data(), 16);
+        dec.Seek(offset + 0x1000);
+        dec.ProcessData(buffer, buffer, read_length);
+    }
+
+    return MakeResult<size_t>(read_length);
 }
 
 ResultVal<size_t> IVFCFile::Write(const u64 offset, const size_t length, const bool flush,
