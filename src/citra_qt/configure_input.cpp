@@ -100,13 +100,13 @@ ConfigureInput::ConfigureInput(QWidget* parent)
     this->loadConfiguration();
 
     // TODO(wwylele): enable these when the input emulation for them is implemented
-    ui->buttonZL->setEnabled(false);
+    /*ui->buttonZL->setEnabled(false);
     ui->buttonZR->setEnabled(false);
     ui->buttonHome->setEnabled(false);
     ui->buttonCStickUp->setEnabled(false);
     ui->buttonCStickDown->setEnabled(false);
     ui->buttonCStickLeft->setEnabled(false);
-    ui->buttonCStickRight->setEnabled(false);
+    ui->buttonCStickRight->setEnabled(false);*/
 }
 
 void ConfigureInput::applyConfiguration() {
