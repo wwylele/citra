@@ -34,7 +34,6 @@ set(SRCS
             frontend/camera/factory.cpp
             frontend/camera/interface.cpp
             frontend/emu_window.cpp
-            frontend/key_map.cpp
             frontend/motion_emu.cpp
             gdbstub/gdbstub.cpp
             hle/config_mem.cpp
@@ -110,6 +109,8 @@ set(SRCS
             hle/service/hid/hid_spvr.cpp
             hle/service/hid/hid_user.cpp
             hle/service/http_c.cpp
+            hle/service/ir/crc8.cpp
+            hle/service/ir/extra_hid.cpp
             hle/service/ir/ir.cpp
             hle/service/ir/ir_rst.cpp
             hle/service/ir/ir_u.cpp
@@ -218,7 +219,7 @@ set(HEADERS
             frontend/camera/factory.h
             frontend/camera/interface.h
             frontend/emu_window.h
-            frontend/key_map.h
+            frontend/input.h
             frontend/motion_emu.h
             gdbstub/gdbstub.h
             hle/config_mem.h
@@ -298,6 +299,8 @@ set(HEADERS
             hle/service/hid/hid_spvr.h
             hle/service/hid/hid_user.h
             hle/service/http_c.h
+            hle/service/ir/crc8.h
+            hle/service/ir/extra_hid.h
             hle/service/ir/ir.h
             hle/service/ir/ir_rst.h
             hle/service/ir/ir_u.h
