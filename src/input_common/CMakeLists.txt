@@ -2,12 +2,14 @@ set(SRCS
             analog_from_button.cpp
             keyboard.cpp
             main.cpp
+            sdl/listener.cpp
             )
 
 set(HEADERS
             analog_from_button.h
             keyboard.h
             main.h
+            sdl/listener.h
             )
 
 if(SDL2_FOUND)

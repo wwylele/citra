@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>370</width>
-    <height>534</height>
+    <width>328</width>
+    <height>424</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -16,10 +16,10 @@
   <layout class="QVBoxLayout" name="verticalLayout_5">
    <item>
     <layout class="QGridLayout" name="gridLayout_7">
-     <item row="0" column="0">
-      <widget class="QGroupBox" name="faceButtons">
+     <item row="2" column="0">
+      <widget class="QGroupBox" name="faceButtons_3">
        <property name="title">
-        <string>Face Buttons</string>
+        <string>Shoulder Buttons</string>
        </property>
        <property name="flat">
         <bool>false</bool>
@@ -27,18 +27,18 @@
        <property name="checkable">
         <bool>false</bool>
        </property>
-       <layout class="QGridLayout" name="gridLayout">
-        <item row="0" column="0">
-         <layout class="QVBoxLayout" name="verticalLayout">
+       <layout class="QGridLayout" name="gridLayout_3">
+        <item row="0" column="1">
+         <layout class="QVBoxLayout" name="verticalLayout_14">
           <item>
-           <widget class="QLabel" name="label">
+           <widget class="QLabel" name="label_19">
             <property name="text">
-             <string>A:</string>
+             <string>R:</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="buttonA">
+           <widget class="ButtonSetter" name="buttonR">
             <property name="text">
              <string/>
             </property>
@@ -46,17 +46,17 @@
           </item>
          </layout>
         </item>
-        <item row="0" column="1">
-         <layout class="QVBoxLayout" name="verticalLayout_2">
+        <item row="0" column="0">
+         <layout class="QVBoxLayout" name="verticalLayout_13">
           <item>
-           <widget class="QLabel" name="label_2">
+           <widget class="QLabel" name="label_17">
             <property name="text">
-             <string>B:</string>
+             <string>L:</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="buttonB">
+           <widget class="ButtonSetter" name="buttonL">
             <property name="text">
              <string/>
             </property>
@@ -65,16 +65,16 @@
          </layout>
         </item>
         <item row="1" column="0">
-         <layout class="QVBoxLayout" name="verticalLayout_3">
+         <layout class="QVBoxLayout" name="verticalLayout_15">
           <item>
-           <widget class="QLabel" name="label_3">
+           <widget class="QLabel" name="label_20">
             <property name="text">
-             <string>X:</string>
+             <string>ZL:</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="buttonX">
+           <widget class="ButtonSetter" name="buttonZL">
             <property name="text">
              <string/>
             </property>
@@ -83,16 +83,16 @@
          </layout>
         </item>
         <item row="1" column="1">
-         <layout class="QVBoxLayout" name="verticalLayout_4">
+         <layout class="QVBoxLayout" name="verticalLayout_16">
           <item>
-           <widget class="QLabel" name="label_4">
+           <widget class="QLabel" name="label_18">
             <property name="text">
-             <string>Y:</string>
+             <string>ZR:</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="buttonY">
+           <widget class="ButtonSetter" name="buttonZR">
             <property name="text">
              <string/>
             </property>
@@ -103,7 +103,43 @@
        </layout>
       </widget>
      </item>
+     <item row="0" column="0">
+      <widget class="QGroupBox" name="faceButtons_4">
+       <property name="title">
+        <string>Circle Pad</string>
+       </property>
+       <property name="flat">
+        <bool>false</bool>
+       </property>
+       <property name="checkable">
+        <bool>false</bool>
+       </property>
+       <layout class="QGridLayout" name="gridLayout_4">
+        <item row="0" column="0">
+         <widget class="AnalogSetter" name="analogCirclePad" native="true"/>
+        </item>
+       </layout>
+      </widget>
+     </item>
      <item row="0" column="1">
+      <widget class="QGroupBox" name="faceButtons_5">
+       <property name="title">
+        <string>C-Stick</string>
+       </property>
+       <property name="flat">
+        <bool>false</bool>
+       </property>
+       <property name="checkable">
+        <bool>false</bool>
+       </property>
+       <layout class="QGridLayout" name="gridLayout_5">
+        <item row="0" column="0">
+         <widget class="AnalogSetter" name="analogCStick" native="true"/>
+        </item>
+       </layout>
+      </widget>
+     </item>
+     <item row="1" column="0">
       <widget class="QGroupBox" name="faceButtons_2">
        <property name="title">
         <string>Directional Pad</string>
@@ -125,7 +161,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="buttonDpadUp">
+           <widget class="ButtonSetter" name="buttonDpadUp">
             <property name="text">
              <string/>
             </property>
@@ -143,7 +179,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="buttonDpadDown">
+           <widget class="ButtonSetter" name="buttonDpadDown">
             <property name="text">
              <string/>
             </property>
@@ -161,7 +197,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="buttonDpadLeft">
+           <widget class="ButtonSetter" name="buttonDpadLeft">
             <property name="text">
              <string/>
             </property>
@@ -179,94 +215,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="buttonDpadRight">
-            <property name="text">
-             <string/>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </item>
-       </layout>
-      </widget>
-     </item>
-     <item row="1" column="0">
-      <widget class="QGroupBox" name="faceButtons_3">
-       <property name="title">
-        <string>Shoulder Buttons</string>
-       </property>
-       <property name="flat">
-        <bool>false</bool>
-       </property>
-       <property name="checkable">
-        <bool>false</bool>
-       </property>
-       <layout class="QGridLayout" name="gridLayout_3">
-        <item row="0" column="0">
-         <layout class="QVBoxLayout" name="verticalLayout_13">
-          <item>
-           <widget class="QLabel" name="label_17">
-            <property name="text">
-             <string>L:</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="buttonL">
-            <property name="text">
-             <string/>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </item>
-        <item row="0" column="1">
-         <layout class="QVBoxLayout" name="verticalLayout_14">
-          <item>
-           <widget class="QLabel" name="label_19">
-            <property name="text">
-             <string>R:</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="buttonR">
-            <property name="text">
-             <string/>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </item>
-        <item row="1" column="0">
-         <layout class="QVBoxLayout" name="verticalLayout_15">
-          <item>
-           <widget class="QLabel" name="label_20">
-            <property name="text">
-             <string>ZL:</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="buttonZL">
-            <property name="text">
-             <string/>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </item>
-        <item row="1" column="1">
-         <layout class="QVBoxLayout" name="verticalLayout_16">
-          <item>
-           <widget class="QLabel" name="label_18">
-            <property name="text">
-             <string>ZR:</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="buttonZR">
+           <widget class="ButtonSetter" name="buttonDpadRight">
             <property name="text">
              <string/>
             </property>
@@ -278,9 +227,9 @@
       </widget>
      </item>
      <item row="1" column="1">
-      <widget class="QGroupBox" name="faceButtons_4">
+      <widget class="QGroupBox" name="faceButtons">
        <property name="title">
-        <string>Circle Pad</string>
+        <string>Face Buttons</string>
        </property>
        <property name="flat">
         <bool>false</bool>
@@ -288,18 +237,18 @@
        <property name="checkable">
         <bool>false</bool>
        </property>
-       <layout class="QGridLayout" name="gridLayout_4">
+       <layout class="QGridLayout" name="gridLayout">
         <item row="0" column="0">
-         <layout class="QVBoxLayout" name="verticalLayout_17">
+         <layout class="QVBoxLayout" name="verticalLayout">
           <item>
-           <widget class="QLabel" name="label_21">
+           <widget class="QLabel" name="label">
             <property name="text">
-             <string>Left:</string>
+             <string>A:</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="buttonCircleLeft">
+           <widget class="ButtonSetter" name="buttonA">
             <property name="text">
              <string/>
             </property>
@@ -308,103 +257,16 @@
          </layout>
         </item>
         <item row="0" column="1">
-         <layout class="QVBoxLayout" name="verticalLayout_18">
+         <layout class="QVBoxLayout" name="verticalLayout_2">
           <item>
-           <widget class="QLabel" name="label_23">
+           <widget class="QLabel" name="label_2">
             <property name="text">
-             <string>Right:</string>
+             <string>B:</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="buttonCircleRight">
-            <property name="text">
-             <string/>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </item>
-        <item row="1" column="0">
-         <layout class="QVBoxLayout" name="verticalLayout_19">
-          <item>
-           <widget class="QLabel" name="label_24">
-            <property name="text">
-             <string>Up:</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="buttonCircleUp">
-            <property name="text">
-             <string/>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </item>
-        <item row="1" column="1">
-         <layout class="QVBoxLayout" name="verticalLayout_20">
-          <item>
-           <widget class="QLabel" name="label_22">
-            <property name="text">
-             <string>Down:</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="buttonCircleDown">
-            <property name="text">
-             <string/>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </item>
-       </layout>
-      </widget>
-     </item>
-     <item row="2" column="0">
-      <widget class="QGroupBox" name="faceButtons_5">
-       <property name="title">
-        <string>C-Stick</string>
-       </property>
-       <property name="flat">
-        <bool>false</bool>
-       </property>
-       <property name="checkable">
-        <bool>false</bool>
-       </property>
-       <layout class="QGridLayout" name="gridLayout_5">
-        <item row="0" column="0">
-         <layout class="QVBoxLayout" name="verticalLayout_21">
-          <item>
-           <widget class="QLabel" name="label_25">
-            <property name="text">
-             <string>Left:</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="buttonCStickLeft">
-            <property name="text">
-             <string/>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </item>
-        <item row="0" column="1">
-         <layout class="QVBoxLayout" name="verticalLayout_22">
-          <item>
-           <widget class="QLabel" name="label_27">
-            <property name="text">
-             <string>Right:</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="buttonCStickRight">
+           <widget class="ButtonSetter" name="buttonB">
             <property name="text">
              <string/>
             </property>
@@ -413,16 +275,16 @@
          </layout>
         </item>
         <item row="1" column="0">
-         <layout class="QVBoxLayout" name="verticalLayout_23">
+         <layout class="QVBoxLayout" name="verticalLayout_3">
           <item>
-           <widget class="QLabel" name="label_28">
+           <widget class="QLabel" name="label_3">
             <property name="text">
-             <string>Up:</string>
+             <string>X:</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="buttonCStickUp">
+           <widget class="ButtonSetter" name="buttonX">
             <property name="text">
              <string/>
             </property>
@@ -431,16 +293,16 @@
          </layout>
         </item>
         <item row="1" column="1">
-         <layout class="QVBoxLayout" name="verticalLayout_24">
+         <layout class="QVBoxLayout" name="verticalLayout_4">
           <item>
-           <widget class="QLabel" name="label_26">
+           <widget class="QLabel" name="label_4">
             <property name="text">
-             <string>Down:</string>
+             <string>Y:</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="buttonCStickDown">
+           <widget class="ButtonSetter" name="buttonY">
             <property name="text">
              <string/>
             </property>
@@ -473,7 +335,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="buttonStart">
+           <widget class="ButtonSetter" name="buttonStart">
             <property name="text">
              <string/>
             </property>
@@ -491,7 +353,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="buttonSelect">
+           <widget class="ButtonSetter" name="buttonSelect">
             <property name="text">
              <string/>
             </property>
@@ -509,25 +371,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="buttonHome">
-            <property name="text">
-             <string/>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </item>
-        <item row="1" column="1">
-         <layout class="QVBoxLayout" name="verticalLayout_28">
-          <item>
-           <widget class="QLabel" name="label_36">
-            <property name="text">
-             <string>Circle Mod:</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="buttonCircleMod">
+           <widget class="ButtonSetter" name="buttonHome">
             <property name="text">
              <string/>
             </property>
@@ -587,6 +431,20 @@
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>ButtonSetter</class>
+   <extends>QPushButton</extends>
+   <header>configure_input_widget.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>AnalogSetter</class>
+   <extends>QWidget</extends>
+   <header>configure_input_widget.h</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>
