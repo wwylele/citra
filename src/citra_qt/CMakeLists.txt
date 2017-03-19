@@ -26,6 +26,7 @@ set(SRCS
             configure_graphics.cpp
             configure_system.cpp
             configure_input.cpp
+            configure_input_widget.cpp
             game_list.cpp
             hotkeys.cpp
             main.cpp
@@ -59,6 +60,7 @@ set(HEADERS
             configure_graphics.h
             configure_system.h
             configure_input.h
+            configure_input_widget.h
             game_list.h
             game_list_p.h
             hotkeys.h
