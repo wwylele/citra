@@ -20,6 +20,7 @@ public:
 
 void InitRST();
 void ShutdownRST();
+void ReloadInputDevices();
 
 } // namespace IR
 } // namespace Service
