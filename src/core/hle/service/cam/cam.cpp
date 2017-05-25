@@ -398,6 +398,7 @@ void SetReceiving(Service::Interface* self) {
         rb.Push(RESULT_SUCCESS);
         rb.PushCopyHandles(Kernel::g_handle_table.Create(port.completion_event).MoveFrom());
     } else {
+        LOG_ERROR(Service_CAM, "invalid port_select=%u", port_select.m_val);
         rb.Push(ERROR_INVALID_ENUM_VALUE);
         rb.PushCopyHandles(0);
     }
@@ -414,7 +415,7 @@ void IsFinishedReceiving(Service::Interface* self) {
     if (port_select.IsSingle()) {
         int port = *port_select.begin();
         rb.Push(RESULT_SUCCESS);
-        rb.Push(ports[port].is_receiving || ports[port].is_pending_receiving);
+        rb.Push(!(ports[port].is_receiving || ports[port].is_pending_receiving));
     } else {
         LOG_ERROR(Service_CAM, "invalid port_select=%u", port_select.m_val);
         rb.Push(ERROR_INVALID_ENUM_VALUE);
@@ -508,7 +509,7 @@ void GetTransferBytes(Service::Interface* self) {
     IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
     if (port_select.IsSingle()) {
         int port = *port_select.begin();
-        rb.Push(RESULT_SUCCESS.raw);
+        rb.Push(RESULT_SUCCESS);
         rb.Push(ports[port].transfer_bytes);
     } else {
         LOG_ERROR(Service_CAM, "invalid port_select=%u", port_select.m_val);
@@ -930,7 +931,7 @@ void SetPackageParameterWithoutContext(Service::Interface* self) {
 
     PackageParameterWithoutContext package;
     rp.PopRaw(package);
-    rp.Skip(4, false);
+    rp.Skip(11 - (sizeof(PackageParameterWithoutContext) + 3) / 4, false);
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
     rb.Push(RESULT_SUCCESS);
