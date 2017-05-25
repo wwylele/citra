@@ -534,6 +534,11 @@ static void WriteLighting(std::string& out, const PicaShaderConfig& config) {
                 "(1.0 - (surface_normal.x*surface_normal.x + surface_normal.y*surface_normal.y))";
             out += "surface_normal.z = sqrt(max(" + val + ", 0.0));\n";
         }
+
+        // Note: the tangent vector is not modified by the normal map.
+        out += "vec3 surface_tangent = vec3(1.0, 0.0, 0.0);\n";
+        // out += "surface_tangent -= dot(surface_tangent, surface_normal) * surface_normal;\n";
+        // out += "surface_tangent = normalize(surface_tangent);\n";
     } else if (lighting.bump_mode == LightingRegs::LightingBumpMode::TangentMap) {
         // Bump mapping is enabled using a tangent map
         LOG_CRITICAL(HW_GPU, "unimplemented bump mapping mode (tangent mapping)");
@@ -541,11 +546,13 @@ static void WriteLighting(std::string& out, const PicaShaderConfig& config) {
     } else {
         // No bump mapping - surface local normal is just a unit normal
         out += "vec3 surface_normal = vec3(0.0, 0.0, 1.0);\n";
+        out += "vec3 surface_tangent = vec3(1.0, 0.0, 0.0);\n";
     }
 
     // Rotate the surface-local normal by the interpolated normal quaternion to convert it to
     // eyespace.
     out += "vec3 normal = quaternion_rotate(normalize(normquat), surface_normal);\n";
+    out += "vec3 tangent = quaternion_rotate(normalize(normquat), surface_tangent);\n";
 
     // Gets the index into the specified lookup table for specular lighting
     auto GetLutIndex = [&lighting](unsigned light_num, LightingRegs::LightingLutInput input,
@@ -571,6 +578,24 @@ static void WriteLighting(std::string& out, const PicaShaderConfig& config) {
 
         case LightingRegs::LightingLutInput::SP:
             index = std::string("dot(light_vector, spot_dir)");
+            break;
+
+        case LightingRegs::LightingLutInput::CP:
+            if (lighting.config == LightingRegs::LightingConfig::Config7) {
+                // Note: even if the normal vector is modified by normal map (and it is not the
+                // normal
+                // of the tangent plane anymore), the half angle vector is still projected using the
+                // modified normal vector.
+                std::string half_angle_proj = half_angle +
+                                              " - normal / dot(normal, normal) * dot(normal, " +
+                                              half_angle + ")";
+                // Note: the half angle vector projection is confirmed not normalized before the dot
+                // product. The result is in fact not cos(phi) as the name suggested.
+                index = "dot(" + half_angle_proj + ", tangent)";
+
+            } else {
+                index = "0.0";
+            }
             break;
 
         default:
