@@ -545,9 +545,15 @@ static void WriteLighting(std::string& out, const PicaShaderConfig& config) {
         out += "vec3 surface_normal = vec3(0.0, 0.0, 1.0);\n";
     }
 
+    // The max error of doing nlerp on a quaternion vs. slerp is proportional to the angle of the
+    // arc being interpolated across. Therefore, by reducing the angle we can greatly decrease
+    // error. Taking the square root of a quaternion with a rotation of theta will produce one with
+    // a rotation of theta/2 on the same plane. We do this in the vertex shader and then reverse the
+    // transformation here by squaring it.
+    out += "vec4 normquat = quaternion_pow2(normalize(normquat_half));\n";
     // Rotate the surface-local normal by the interpolated normal quaternion to convert it to
-    // eyespace
-    out += "vec3 normal = normalize(quaternion_rotate(normquat, surface_normal));\n";
+    // eyespace.
+    out += "vec3 normal = quaternion_rotate(normquat, surface_normal);\n";
 
     // Gets the index into the specified lookup table for specular lighting
     auto GetLutIndex = [&lighting](unsigned light_num, LightingRegs::LightingLutInput input,
@@ -982,7 +988,7 @@ std::string GenerateFragmentShader(const PicaShaderConfig& config) {
 in vec4 primary_color;
 in vec2 texcoord[3];
 in float texcoord0_w;
-in vec4 normquat;
+in vec4 normquat_half;
 in vec3 view;
 
 in vec4 gl_FragCoord;
@@ -1031,7 +1037,19 @@ uniform sampler1D proctex_diff_lut;
 // Rotate the vector v by the quaternion q
 vec3 quaternion_rotate(vec4 q, vec3 v) {
     return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
-})";
+}
+
+vec4 quaternion_pow2(vec4 q) {
+    // This is quaternion squaring, with common sub-expressions factored out:
+    // (a + b*i)^2 = a^2 - b^2 + 2*a*(b*i)
+    //             = a^2 - (1 - a^2) + 2*a*(b*i)
+    //             = (2*a^2 - 1) + 2*a*(b*i)
+
+    float two_a = 2.0 * q.w;
+    return vec4(two_a * q.xyz, two_a * q.w - 1.0);
+}
+
+)";
 
     if (config.state.proctex.enable)
         AppendProcTexSampler(out, config);
@@ -1136,8 +1154,19 @@ std::string GenerateVertexShader() {
 out vec4 primary_color;
 out vec2 texcoord[3];
 out float texcoord0_w;
-out vec4 normquat;
+out vec4 normquat_half;
 out vec3 view;
+
+vec4 quaternion_sqrt(vec4 q) {
+    // This is the quaternion square root, with common sub-expressions factored out:
+    //                      1
+    // sqrt(a + b*i) = ------------ * (1+a + b*i)
+    //                 sqrt(2 + 2a)
+
+    float r = 1.0 + q.w;
+    float s = inversesqrt(2.0 * r);
+    return s * vec4(q.xyz, r);
+}
 
 void main() {
     primary_color = vert_color;
@@ -1145,7 +1174,7 @@ void main() {
     texcoord[1] = vert_texcoord1;
     texcoord[2] = vert_texcoord2;
     texcoord0_w = vert_texcoord0_w;
-    normquat = vert_normquat;
+    normquat_half = quaternion_sqrt(vert_normquat);
     view = vert_view;
     gl_Position = vec4(vert_position.x, vert_position.y, -vert_position.z, vert_position.w);
 }
