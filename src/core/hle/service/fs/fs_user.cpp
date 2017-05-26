@@ -8,6 +8,7 @@
 #include "common/logging/log.h"
 #include "common/scope_exit.h"
 #include "common/string_util.h"
+#include "core/file_sys/errors.h"
 #include "core/hle/kernel/client_session.h"
 #include "core/hle/result.h"
 #include "core/hle/service/fs/archive.h"
@@ -129,7 +130,7 @@ static void OpenFileDirectly(Service::Interface* self) {
     ResultVal<ArchiveHandle> archive_handle = OpenArchive(archive_id, archive_path);
     if (archive_handle.Failed()) {
         LOG_ERROR(Service_FS,
-                  "failed to get a handle for archive archive_id=0x%08X archive_path=%s",
+                  "Failed to get a handle for archive archive_id=0x%08X archive_path=%s",
                   static_cast<u32>(archive_id), archive_path.DebugStr().c_str());
         cmd_buff[1] = archive_handle.Code().raw;
         cmd_buff[3] = 0;
@@ -539,9 +540,7 @@ static void FormatSaveData(Service::Interface* self) {
     if (archive_id != FS::ArchiveIdCode::SaveData) {
         LOG_ERROR(Service_FS, "tried to format an archive different than SaveData, %u",
                   static_cast<u32>(archive_id));
-        cmd_buff[1] = ResultCode(ErrorDescription::FS_InvalidPath, ErrorModule::FS,
-                                 ErrorSummary::InvalidArgument, ErrorLevel::Usage)
-                          .raw;
+        cmd_buff[1] = FileSys::ERROR_INVALID_PATH.raw;
         return;
     }
 
@@ -802,9 +801,7 @@ static void InitializeWithSdkVersion(Service::Interface* self) {
         cmd_buff[1] = RESULT_SUCCESS.raw;
     } else {
         LOG_ERROR(Service_FS, "ProcessId Header must be 0x20");
-        cmd_buff[1] = ResultCode(ErrorDescription::OS_InvalidBufferDescriptor, ErrorModule::OS,
-                                 ErrorSummary::WrongArgument, ErrorLevel::Permanent)
-                          .raw;
+        cmd_buff[1] = IPC::ERR_INVALID_BUFFER_DESCRIPTOR.raw;
     }
 }
 

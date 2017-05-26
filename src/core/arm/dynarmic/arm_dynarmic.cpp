@@ -138,7 +138,7 @@ void ARM_Dynarmic::ExecuteInstructions(int num_instructions) {
 
     unsigned ticks_executed = jit->Run(static_cast<unsigned>(num_instructions));
 
-    AddTicks(ticks_executed);
+    AddTicks(2000);
 }
 
 void ARM_Dynarmic::SaveContext(ARM_Interface::ThreadContext& ctx) {
