@@ -3,6 +3,7 @@ set(SRCS
             tests.cpp
             common/param_package.cpp
             core/file_sys/path_parser.cpp
+            sample.cpp
             )
 
 set(HEADERS
