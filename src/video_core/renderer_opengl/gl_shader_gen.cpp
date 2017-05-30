@@ -520,12 +520,16 @@ static void WriteLighting(std::string& out, const PicaShaderConfig& config) {
            "vec3 refl_value = vec3(0.0);\n"
            "vec3 spot_dir = vec3(0.0);\n;";
 
-    // Compute fragment normals
-    if (lighting.bump_mode == LightingRegs::LightingBumpMode::NormalMap) {
-        // Bump mapping is enabled using a normal map, read perturbation vector from the selected
-        // texture
-        out += "vec3 surface_normal = 2.0 * (" + SampleTexture(config, lighting.bump_selector) +
-               ").rgb - 1.0;\n";
+    // Compute fragment normals and tangents
+    const std::string pertubation =
+        "2.0 * (" + SampleTexture(config, lighting.bump_selector) + ").rgb - 1.0";
+    switch (lighting.bump_mode) {
+    case LightingRegs::LightingBumpMode::None:
+        out += "vec3 surface_normal = vec3(0.0, 0.0, 1.0);\n";
+        out += "vec3 surface_tangent = vec3(1.0, 0.0, 0.0);\n";
+        break;
+    case LightingRegs::LightingBumpMode::NormalMap:
+        out += "vec3 surface_normal = " + pertubation + ";\n";
 
         // Recompute Z-component of perturbation if 'renorm' is enabled, this provides a higher
         // precision result
@@ -535,22 +539,25 @@ static void WriteLighting(std::string& out, const PicaShaderConfig& config) {
             out += "surface_normal.z = sqrt(max(" + val + ", 0.0));\n";
         }
 
-        // Note: the tangent vector is not modified by the normal map.
+        // Note: the tangent vector is not perturbed by the normal map.
         out += "vec3 surface_tangent = vec3(1.0, 0.0, 0.0);\n";
-        // out += "surface_tangent -= dot(surface_tangent, surface_normal) * surface_normal;\n";
-        // out += "surface_tangent = normalize(surface_tangent);\n";
-    } else if (lighting.bump_mode == LightingRegs::LightingBumpMode::TangentMap) {
-        // Bump mapping is enabled using a tangent map
-        LOG_CRITICAL(HW_GPU, "unimplemented bump mapping mode (tangent mapping)");
-        UNIMPLEMENTED();
-    } else {
-        // No bump mapping - surface local normal is just a unit normal
+
+        break;
+    case LightingRegs::LightingBumpMode::TangentMap:
+        // Note: the normal vector is not perturbed by the tangent map.
         out += "vec3 surface_normal = vec3(0.0, 0.0, 1.0);\n";
-        out += "vec3 surface_tangent = vec3(1.0, 0.0, 0.0);\n";
+        out += "vec3 surface_tangent = " + pertubation + ";\n";
+        // Mathematically, recomputing Z-component of the tangent vector won't affect the relevant
+        // computation below, which is also confirmed on 3DS. So we don't bother recomputating here
+        // even if the option is on.
+        break;
+    default:
+        LOG_CRITICAL(HW_GPU, "Unknown bump mode %u", static_cast<u32>(lighting.bump_mode));
+        UNREACHABLE();
     }
 
-    // Rotate the surface-local normal by the interpolated normal quaternion to convert it to
-    // eyespace.
+    // Rotate the surface-local normal and tangent by the interpolated normal quaternion to convert
+    // it to eyespace.
     out += "vec3 normal = quaternion_rotate(normalize(normquat), surface_normal);\n";
     out += "vec3 tangent = quaternion_rotate(normalize(normquat), surface_tangent);\n";
 
