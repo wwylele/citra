@@ -283,6 +283,8 @@ add_subdirectory(externals)
 
 enable_testing()
 
+add_subdirectory(src)
+
 
 # Installation instructions
 # =========================

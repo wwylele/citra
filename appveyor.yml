@@ -121,10 +121,47 @@ after_build:
 
           # build the nuget file
           $arguments = "pack", "$CMAKE_BINARY_DIR/citra.nuspec", "-BasePath", "$SQUIRREL_BUILD_DIR", "-OutputDirectory", "$SQUIRREL_BUILD_DIR"
-          Start-Process -FilePath "$CMAKE_BINARY_DIR/nuget/nuget.exe" -Wait -NoNewWindow -ArgumentList $arguments
-          echo "Building squirrel"
+
+          Write-Output "running nuget"
+          $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+          $pinfo.FileName = "$CMAKE_BINARY_DIR/nuget/nuget.exe"
+          $pinfo.RedirectStandardError = $true
+          $pinfo.RedirectStandardOutput = $true
+          $pinfo.UseShellExecute = $false
+          $pinfo.Arguments = $arguments
+          $p = New-Object System.Diagnostics.Process
+          $p.StartInfo = $pinfo
+          $p.Start() | Out-Null
+          $p.WaitForExit()
+          $stdout = $p.StandardOutput.ReadToEnd()
+          $stderr = $p.StandardError.ReadToEnd()
+          Write-Host "stdout: $stdout"
+          Write-Host "stderr: $stderr"
+          Write-Host "exit code: " + $p.ExitCode
+
+          # Start-Process -FilePath "$CMAKE_BINARY_DIR/nuget/nuget.exe" -Wait -NoNewWindow -ArgumentList $arguments
+          Write-Output "running squirrel"
           $arguments = "--releasify=$SQUIRREL_BUILD_DIR/citra.edge.0.1.$APPVEYOR_BUILD_NUMBER.nupkg", "--releaseDir=$SQUIRREL_RELEASE_DIR", "--icon=$CMAKE_SOURCE_DIR/dist/citra.ico"
-          Start-Process -FilePath $CMAKE_BINARY_DIR/squirrel/squirrel.exe -Wait -NoNewWindow -ArgumentList $arguments
+          
+          $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+          $pinfo.FileName = "$CMAKE_BINARY_DIR/squirrel/squirrel.exe"
+          $pinfo.RedirectStandardError = $true
+          $pinfo.RedirectStandardOutput = $true
+          $pinfo.UseShellExecute = $false
+          $pinfo.Arguments = $arguments
+          $p = New-Object System.Diagnostics.Process
+          $p.StartInfo = $pinfo
+          $p.Start() | Out-Null
+          $p.WaitForExit()
+          $stdout = $p.StandardOutput.ReadToEnd()
+          $stderr = $p.StandardError.ReadToEnd()
+          Write-Host "stdout: $stdout"
+          Write-Host "stderr: $stderr"
+          Write-Host "exit code: " + $p.ExitCode
+
+          Write-Host "copying artifacts"
+          
+          #Start-Process -FilePath $CMAKE_BINARY_DIR/squirrel/squirrel.exe -Wait -NoNewWindow -ArgumentList $arguments
 
           # copy the files to the root dir so it'll be easier to make them artifacts
           Copy-Item -path "$SQUIRREL_RELEASE_DIR/citra*.nupkg" -recurse -force -destination $CMAKE_SOURCE_DIR
