@@ -9,6 +9,8 @@ environment:
     #- BUILD_TYPE: msvc
   BUILD_PASSWORD:
     secure: EXGNlWKJsCtbeImEJ5EP9qrxZ+EqUFfNy+CP61nDOMA=
+  CITRA_BOT_PASSWORD:
+    secure: lP9M+9me/uecz6fNsMUjRqdeoHPkdeHeLEHIP0qfp2wo6FtQySBnC+l27cFsPAKF
 
 cache:
   - C:\ProgramData\chocolatey\bin -> appveyor.yml
@@ -96,7 +98,7 @@ after_build:
 
           # Download the previous release information to generate a delta build
           $LATEST_RELEASE_URL = "https://api.github.com/repos/citra-emu/citra-bleeding-edge/releases/latest"
-          $LATEST_RELEASE_JSON = Invoke-WebRequest $LATEST_RELEASE_URL -Headers @{"Accept"="application/json"; "User-Agent"="citrabot"}
+          $LATEST_RELEASE_JSON = Invoke-WebRequest $LATEST_RELEASE_URL -Headers @{"Accept"="application/json"; "User-Agent"="citrabot"; "Authorization"="token $env:CITRA_BOT_PASSWORD"}
           $LATEST_RELEASE_JSON.Content -match '.*"tag_name":\s*"([^"]*)".*' | Out-Null
           $LATEST_RELEASE_TAG = $Matches[1]
           $RELEASE_URL = "https://github.com/citra-emu/citra-bleeding-edge/releases/download/$LATEST_RELEASE_TAG"
