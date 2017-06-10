@@ -96,7 +96,7 @@ after_build:
 
           # Download the previous release information to generate a delta build
           $LATEST_RELEASE_URL = "https://api.github.com/repos/citra-emu/citra-bleeding-edge/releases/latest"
-          $LATEST_RELEASE_JSON = Invoke-WebRequest $LATEST_RELEASE_URL -Headers @{"Accept"="application/json"}
+          $LATEST_RELEASE_JSON = Invoke-WebRequest $LATEST_RELEASE_URL -Headers @{"Accept"="application/json"; "User-Agent"="citrabot"}
           $LATEST_RELEASE_JSON.Content -match '.*"tag_name":\s*"([^"]*)".*' | Out-Null
           $LATEST_RELEASE_TAG = $Matches[1]
           $RELEASE_URL = "https://github.com/citra-emu/citra-bleeding-edge/releases/download/$LATEST_RELEASE_TAG"
