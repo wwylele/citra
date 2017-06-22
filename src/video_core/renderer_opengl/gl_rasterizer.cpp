@@ -107,7 +107,7 @@ RasterizerOpenGL::RasterizerOpenGL() : shader_dirty(true) {
 
     // Setup the LUT for the fog
     fog_lut.Create();
-    state.fog_lut.texture_1d = fog_lut.handle;
+    state.fog_lut.texture_buffer = fog_lut.handle;
     state.Apply();
     fog_lut_buffer.Create();
     glBindBuffer(GL_TEXTURE_BUFFER, fog_lut_buffer.handle);
