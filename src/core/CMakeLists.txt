@@ -12,6 +12,7 @@ set(SRCS
             arm/skyeye_common/vfp/vfpdouble.cpp
             arm/skyeye_common/vfp/vfpinstr.cpp
             arm/skyeye_common/vfp/vfpsingle.cpp
+			cheat/cheat_core.cpp
             core.cpp
             core_timing.cpp
             file_sys/archive_backend.cpp
@@ -144,6 +145,7 @@ set(SRCS
             hle/service/nwm/nwm_tst.cpp
             hle/service/nwm/nwm_uds.cpp
             hle/service/nwm/uds_beacon.cpp
+            hle/service/nwm/uds_data.cpp
             hle/service/pm_app.cpp
             hle/service/ptm/ptm.cpp
             hle/service/ptm/ptm_gets.cpp
@@ -199,6 +201,7 @@ set(HEADERS
             arm/skyeye_common/vfp/asm_vfp.h
             arm/skyeye_common/vfp/vfp.h
             arm/skyeye_common/vfp/vfp_helper.h
+			cheat/cheat_core.h
             core.h
             core_timing.h
             file_sys/archive_backend.h
@@ -341,6 +344,7 @@ set(HEADERS
             hle/service/nwm/nwm_tst.h
             hle/service/nwm/nwm_uds.h
             hle/service/nwm/uds_beacon.h
+            hle/service/nwm/uds_data.h
             hle/service/pm_app.h
             hle/service/ptm/ptm.h
             hle/service/ptm/ptm_gets.h

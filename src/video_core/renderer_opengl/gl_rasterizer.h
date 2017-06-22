@@ -263,7 +263,7 @@ private:
 
     struct {
         UniformData data;
-        bool lut_dirty[6];
+        std::array<bool, Pica::LightingRegs::NumLightingSampler> lut_dirty;
         bool fog_lut_dirty;
         bool proctex_noise_lut_dirty;
         bool proctex_color_map_dirty;
@@ -279,11 +279,13 @@ private:
     OGLBuffer uniform_buffer;
     OGLFramebuffer framebuffer;
 
-    std::array<OGLTexture, 6> lighting_luts;
-    std::array<std::array<GLvec4, 256>, 6> lighting_lut_data{};
+    OGLBuffer lighting_lut_buffer;
+    OGLTexture lighting_lut;
+    std::array<std::array<GLvec2, 256>, Pica::LightingRegs::NumLightingSampler> lighting_lut_data{};
 
+    OGLBuffer fog_lut_buffer;
     OGLTexture fog_lut;
-    std::array<GLuint, 128> fog_lut_data{};
+    std::array<GLvec2, 128> fog_lut_data{};
 
     OGLTexture proctex_noise_lut;
     std::array<GLvec2, 128> proctex_noise_lut_data{};

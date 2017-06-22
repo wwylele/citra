@@ -3,6 +3,7 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/CMakeModules)
 
 set(SRCS
+            cheat/cheat_gui.cpp
             configuration/config.cpp
             configuration/configure_audio.cpp
             configuration/configure_debug.cpp
@@ -33,6 +34,7 @@ set(SRCS
             )
 
 set(HEADERS
+            cheat/cheat_gui.h
             configuration/config.h
             configuration/configure_audio.h
             configuration/configure_debug.h
@@ -63,6 +65,7 @@ set(HEADERS
             )
 
 set(UIS
+            cheat/cheat_gui.ui
             configuration/configure.ui
             configuration/configure_audio.ui
             configuration/configure_debug.ui
