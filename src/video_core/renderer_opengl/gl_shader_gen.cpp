@@ -73,8 +73,12 @@ PicaShaderConfig PicaShaderConfig::BuildFromRegs(const Pica::Regs& regs) {
         state.lighting.light[light_index].num = num;
         state.lighting.light[light_index].directional = light.config.directional != 0;
         state.lighting.light[light_index].two_sided_diffuse = light.config.two_sided_diffuse != 0;
+        state.lighting.light[light_index].geometric_factor_0 = light.config.geometric_factor_0 != 0;
+        state.lighting.light[light_index].geometric_factor_1 = light.config.geometric_factor_1 != 0;
         state.lighting.light[light_index].dist_atten_enable =
             !regs.lighting.IsDistAttenDisabled(num);
+        state.lighting.light[light_index].spot_atten_enable =
+            !regs.lighting.IsSpotAttenDisabled(num);
     }
 
     state.lighting.lut_d0.enable = regs.lighting.config1.disable_lut_d0 == 0;
@@ -86,6 +90,12 @@ PicaShaderConfig PicaShaderConfig::BuildFromRegs(const Pica::Regs& regs) {
     state.lighting.lut_d1.abs_input = regs.lighting.abs_lut_input.disable_d1 == 0;
     state.lighting.lut_d1.type = regs.lighting.lut_input.d1.Value();
     state.lighting.lut_d1.scale = regs.lighting.lut_scale.GetScale(regs.lighting.lut_scale.d1);
+
+    // this is a dummy field due to lack of the corresponding register
+    state.lighting.lut_sp.enable = true;
+    state.lighting.lut_sp.abs_input = regs.lighting.abs_lut_input.disable_sp == 0;
+    state.lighting.lut_sp.type = regs.lighting.lut_input.sp.Value();
+    state.lighting.lut_sp.scale = regs.lighting.lut_scale.GetScale(regs.lighting.lut_scale.sp);
 
     state.lighting.lut_fr.enable = regs.lighting.config1.disable_lut_fr == 0;
     state.lighting.lut_fr.abs_input = regs.lighting.abs_lut_input.disable_fr == 0;
@@ -509,14 +519,17 @@ static void WriteLighting(std::string& out, const PicaShaderConfig& config) {
     out += "vec4 diffuse_sum = vec4(0.0, 0.0, 0.0, 1.0);\n"
            "vec4 specular_sum = vec4(0.0, 0.0, 0.0, 1.0);\n"
            "vec3 light_vector = vec3(0.0);\n"
-           "vec3 refl_value = vec3(0.0);\n";
+           "vec3 refl_value = vec3(0.0);\n"
+           "vec3 spot_dir = vec3(0.0);\n"
+           "vec3 half_vector = vec3(0.0);\n"
+           "float geo_factor = 1.0;\n";
 
-    // Compute fragment normals
+    // Compute fragment normals and tangents
+    const std::string pertubation =
+        "2.0 * (" + SampleTexture(config, lighting.bump_selector) + ").rgb - 1.0";
     if (lighting.bump_mode == LightingRegs::LightingBumpMode::NormalMap) {
-        // Bump mapping is enabled using a normal map, read perturbation vector from the selected
-        // texture
-        out += "vec3 surface_normal = 2.0 * (" + SampleTexture(config, lighting.bump_selector) +
-               ").rgb - 1.0;\n";
+        // Bump mapping is enabled using a normal map
+        out += "vec3 surface_normal = " + pertubation + ";\n";
 
         // Recompute Z-component of perturbation if 'renorm' is enabled, this provides a higher
         // precision result
@@ -525,31 +538,41 @@ static void WriteLighting(std::string& out, const PicaShaderConfig& config) {
                 "(1.0 - (surface_normal.x*surface_normal.x + surface_normal.y*surface_normal.y))";
             out += "surface_normal.z = sqrt(max(" + val + ", 0.0));\n";
         }
+
+        // The tangent vector is not perturbed by the normal map and is just a unit vector.
+        out += "vec3 surface_tangent = vec3(1.0, 0.0, 0.0);\n";
     } else if (lighting.bump_mode == LightingRegs::LightingBumpMode::TangentMap) {
         // Bump mapping is enabled using a tangent map
-        LOG_CRITICAL(HW_GPU, "unimplemented bump mapping mode (tangent mapping)");
-        UNIMPLEMENTED();
-    } else {
-        // No bump mapping - surface local normal is just a unit normal
+        out += "vec3 surface_tangent = " + pertubation + ";\n";
+        // Mathematically, recomputing Z-component of the tangent vector won't affect the relevant
+        // computation below, which is also confirmed on 3DS. So we don't bother recomputing here
+        // even if 'renorm' is enabled.
+
+        // The normal vector is not perturbed by the tangent map and is just a unit vector.
         out += "vec3 surface_normal = vec3(0.0, 0.0, 1.0);\n";
+    } else {
+        // No bump mapping - surface local normal and tangent are just unit vectors
+        out += "vec3 surface_normal = vec3(0.0, 0.0, 1.0);\n";
+        out += "vec3 surface_tangent = vec3(1.0, 0.0, 0.0);\n";
     }
 
     // Rotate the surface-local normal by the interpolated normal quaternion to convert it to
     // eyespace.
-    out += "vec3 normal = quaternion_rotate(normalize(normquat), surface_normal);\n";
+    out += "vec4 normalized_normquat = normalize(normquat);\n";
+    out += "vec3 normal = quaternion_rotate(normalized_normquat, surface_normal);\n";
+    out += "vec3 tangent = quaternion_rotate(normalized_normquat, surface_tangent);\n";
 
-    // Gets the index into the specified lookup table for specular lighting
-    auto GetLutIndex = [&lighting](unsigned light_num, LightingRegs::LightingLutInput input,
-                                   bool abs) {
-        const std::string half_angle = "normalize(normalize(view) + light_vector)";
+    // Samples the specified lookup table for specular lighting
+    auto GetLutValue = [&lighting](LightingRegs::LightingSampler sampler, unsigned light_num,
+                                   LightingRegs::LightingLutInput input, bool abs) {
         std::string index;
         switch (input) {
         case LightingRegs::LightingLutInput::NH:
-            index = "dot(normal, " + half_angle + ")";
+            index = "dot(normal, normalize(half_vector))";
             break;
 
         case LightingRegs::LightingLutInput::VH:
-            index = std::string("dot(normalize(view), " + half_angle + ")");
+            index = std::string("dot(normalize(view), normalize(half_vector))");
             break;
 
         case LightingRegs::LightingLutInput::NV:
@@ -560,6 +583,26 @@ static void WriteLighting(std::string& out, const PicaShaderConfig& config) {
             index = std::string("dot(light_vector, normal)");
             break;
 
+        case LightingRegs::LightingLutInput::SP:
+            index = std::string("dot(light_vector, spot_dir)");
+            break;
+
+        case LightingRegs::LightingLutInput::CP:
+            // CP input is only available with configuration 7
+            if (lighting.config == LightingRegs::LightingConfig::Config7) {
+                // Note: even if the normal vector is modified by normal map, which is not the
+                // normal of the tangent plane anymore, the half angle vector is still projected
+                // using the modified normal vector.
+                std::string half_angle_proj = "normalize(half_vector) - normal / dot(normal, "
+                                              "normal) * dot(normal, normalize(half_vector))";
+                // Note: the half angle vector projection is confirmed not normalized before the dot
+                // product. The result is in fact not cos(phi) as the name suggested.
+                index = "dot(" + half_angle_proj + ", tangent)";
+            } else {
+                index = "0.0";
+            }
+            break;
+
         default:
             LOG_CRITICAL(HW_GPU, "Unknown lighting LUT input %d\n", (int)input);
             UNIMPLEMENTED();
@@ -567,22 +610,18 @@ static void WriteLighting(std::string& out, const PicaShaderConfig& config) {
             break;
         }
 
+        std::string sampler_string = std::to_string(static_cast<unsigned>(sampler));
+
         if (abs) {
             // LUT index is in the range of (0.0, 1.0)
             index = lighting.light[light_num].two_sided_diffuse ? "abs(" + index + ")"
                                                                 : "max(" + index + ", 0.0)";
+            return "LookupLightingLUTUnsigned(" + sampler_string + ", " + index + ")";
         } else {
             // LUT index is in the range of (-1.0, 1.0)
-            index = "((" + index + " < 0) ? " + index + " + 2.0 : " + index + ") / 2.0";
+            return "LookupLightingLUTSigned(" + sampler_string + ", " + index + ")";
         }
 
-        return "(OFFSET_256 + SCALE_256 * clamp(" + index + ", 0.0, 1.0))";
-    };
-
-    // Gets the lighting lookup table value given the specified sampler and index
-    auto GetLutValue = [](LightingRegs::LightingSampler sampler, std::string lut_index) {
-        return std::string("texture(lut[" + std::to_string((unsigned)sampler / 4) + "], " +
-                           lut_index + ")[" + std::to_string((unsigned)sampler & 3) + "]");
     };
 
     // Write the code to emulate each enabled light
@@ -596,26 +635,46 @@ static void WriteLighting(std::string& out, const PicaShaderConfig& config) {
         else
             out += "light_vector = normalize(" + light_src + ".position + view);\n";
 
+        out += "spot_dir = " + light_src + ".spot_direction;\n";
+        out += "half_vector = normalize(view) + light_vector;\n";
+
         // Compute dot product of light_vector and normal, adjust if lighting is one-sided or
         // two-sided
         std::string dot_product = light_config.two_sided_diffuse
                                       ? "abs(dot(light_vector, normal))"
                                       : "max(dot(light_vector, normal), 0.0)";
 
+        // If enabled, compute spot light attenuation value
+        std::string spot_atten = "1.0";
+        if (light_config.spot_atten_enable &&
+            LightingRegs::IsLightingSamplerSupported(
+                lighting.config, LightingRegs::LightingSampler::SpotlightAttenuation)) {
+            std::string value =
+                GetLutValue(LightingRegs::SpotlightAttenuationSampler(light_config.num),
+                            light_config.num, lighting.lut_sp.type, lighting.lut_sp.abs_input);
+            spot_atten = "(" + std::to_string(lighting.lut_sp.scale) + " * " + value + ")";
+        }
+
         // If enabled, compute distance attenuation value
         std::string dist_atten = "1.0";
         if (light_config.dist_atten_enable) {
-            std::string index = "(" + light_src + ".dist_atten_scale * length(-view - " +
-                                light_src + ".position) + " + light_src + ".dist_atten_bias)";
-            index = "(OFFSET_256 + SCALE_256 * clamp(" + index + ", 0.0, 1.0))";
-            const unsigned lut_num =
-                ((unsigned)LightingRegs::LightingSampler::DistanceAttenuation + light_config.num);
-            dist_atten = GetLutValue((LightingRegs::LightingSampler)lut_num, index);
+            std::string index = "clamp(" + light_src + ".dist_atten_scale * length(-view - " +
+                                light_src + ".position) + " + light_src +
+                                ".dist_atten_bias, 0.0, 1.0)";
+            auto sampler = LightingRegs::DistanceAttenuationSampler(light_config.num);
+            dist_atten = "LookupLightingLUTUnsigned(" +
+                         std::to_string(static_cast<unsigned>(sampler)) + "," + index + ")";
         }
 
         // If enabled, clamp specular component if lighting result is negative
         std::string clamp_highlights =
             lighting.clamp_highlights ? "(dot(light_vector, normal) <= 0.0 ? 0.0 : 1.0)" : "1.0";
+
+        if (light_config.geometric_factor_0 || light_config.geometric_factor_1) {
+            out += "geo_factor = dot(half_vector, half_vector);\n"
+                   "geo_factor = geo_factor == 0.0 ? 0.0 : min(" +
+                   dot_product + " / geo_factor, 1.0);\n";
+        }
 
         // Specular 0 component
         std::string d0_lut_value = "1.0";
@@ -623,21 +682,24 @@ static void WriteLighting(std::string& out, const PicaShaderConfig& config) {
             LightingRegs::IsLightingSamplerSupported(
                 lighting.config, LightingRegs::LightingSampler::Distribution0)) {
             // Lookup specular "distribution 0" LUT value
-            std::string index =
-                GetLutIndex(light_config.num, lighting.lut_d0.type, lighting.lut_d0.abs_input);
-            d0_lut_value = "(" + std::to_string(lighting.lut_d0.scale) + " * " +
-                           GetLutValue(LightingRegs::LightingSampler::Distribution0, index) + ")";
+            std::string value =
+                GetLutValue(LightingRegs::LightingSampler::Distribution0, light_config.num,
+                            lighting.lut_d0.type, lighting.lut_d0.abs_input);
+            d0_lut_value = "(" + std::to_string(lighting.lut_d0.scale) + " * " + value + ")";
         }
         std::string specular_0 = "(" + d0_lut_value + " * " + light_src + ".specular_0)";
+        if (light_config.geometric_factor_0) {
+            specular_0 = "(" + specular_0 + " * geo_factor)";
+        }
 
         // If enabled, lookup ReflectRed value, otherwise, 1.0 is used
         if (lighting.lut_rr.enable &&
             LightingRegs::IsLightingSamplerSupported(lighting.config,
                                                      LightingRegs::LightingSampler::ReflectRed)) {
-            std::string index =
-                GetLutIndex(light_config.num, lighting.lut_rr.type, lighting.lut_rr.abs_input);
-            std::string value = "(" + std::to_string(lighting.lut_rr.scale) + " * " +
-                                GetLutValue(LightingRegs::LightingSampler::ReflectRed, index) + ")";
+            std::string value =
+                GetLutValue(LightingRegs::LightingSampler::ReflectRed, light_config.num,
+                            lighting.lut_rr.type, lighting.lut_rr.abs_input);
+            value = "(" + std::to_string(lighting.lut_rr.scale) + " * " + value + ")";
             out += "refl_value.r = " + value + ";\n";
         } else {
             out += "refl_value.r = 1.0;\n";
@@ -647,11 +709,10 @@ static void WriteLighting(std::string& out, const PicaShaderConfig& config) {
         if (lighting.lut_rg.enable &&
             LightingRegs::IsLightingSamplerSupported(lighting.config,
                                                      LightingRegs::LightingSampler::ReflectGreen)) {
-            std::string index =
-                GetLutIndex(light_config.num, lighting.lut_rg.type, lighting.lut_rg.abs_input);
-            std::string value = "(" + std::to_string(lighting.lut_rg.scale) + " * " +
-                                GetLutValue(LightingRegs::LightingSampler::ReflectGreen, index) +
-                                ")";
+            std::string value =
+                GetLutValue(LightingRegs::LightingSampler::ReflectGreen, light_config.num,
+                            lighting.lut_rg.type, lighting.lut_rg.abs_input);
+            value = "(" + std::to_string(lighting.lut_rg.scale) + " * " + value + ")";
             out += "refl_value.g = " + value + ";\n";
         } else {
             out += "refl_value.g = refl_value.r;\n";
@@ -661,11 +722,10 @@ static void WriteLighting(std::string& out, const PicaShaderConfig& config) {
         if (lighting.lut_rb.enable &&
             LightingRegs::IsLightingSamplerSupported(lighting.config,
                                                      LightingRegs::LightingSampler::ReflectBlue)) {
-            std::string index =
-                GetLutIndex(light_config.num, lighting.lut_rb.type, lighting.lut_rb.abs_input);
-            std::string value = "(" + std::to_string(lighting.lut_rb.scale) + " * " +
-                                GetLutValue(LightingRegs::LightingSampler::ReflectBlue, index) +
-                                ")";
+            std::string value =
+                GetLutValue(LightingRegs::LightingSampler::ReflectBlue, light_config.num,
+                            lighting.lut_rb.type, lighting.lut_rb.abs_input);
+            value = "(" + std::to_string(lighting.lut_rb.scale) + " * " + value + ")";
             out += "refl_value.b = " + value + ";\n";
         } else {
             out += "refl_value.b = refl_value.r;\n";
@@ -677,23 +737,26 @@ static void WriteLighting(std::string& out, const PicaShaderConfig& config) {
             LightingRegs::IsLightingSamplerSupported(
                 lighting.config, LightingRegs::LightingSampler::Distribution1)) {
             // Lookup specular "distribution 1" LUT value
-            std::string index =
-                GetLutIndex(light_config.num, lighting.lut_d1.type, lighting.lut_d1.abs_input);
-            d1_lut_value = "(" + std::to_string(lighting.lut_d1.scale) + " * " +
-                           GetLutValue(LightingRegs::LightingSampler::Distribution1, index) + ")";
+            std::string value =
+                GetLutValue(LightingRegs::LightingSampler::Distribution1, light_config.num,
+                            lighting.lut_d1.type, lighting.lut_d1.abs_input);
+            d1_lut_value = "(" + std::to_string(lighting.lut_d1.scale) + " * " + value + ")";
         }
         std::string specular_1 =
             "(" + d1_lut_value + " * refl_value * " + light_src + ".specular_1)";
+        if (light_config.geometric_factor_1) {
+            specular_1 = "(" + specular_1 + " * geo_factor)";
+        }
 
         // Fresnel
         if (lighting.lut_fr.enable &&
             LightingRegs::IsLightingSamplerSupported(lighting.config,
                                                      LightingRegs::LightingSampler::Fresnel)) {
             // Lookup fresnel LUT value
-            std::string index =
-                GetLutIndex(light_config.num, lighting.lut_fr.type, lighting.lut_fr.abs_input);
-            std::string value = "(" + std::to_string(lighting.lut_fr.scale) + " * " +
-                                GetLutValue(LightingRegs::LightingSampler::Fresnel, index) + ")";
+            std::string value =
+                GetLutValue(LightingRegs::LightingSampler::Fresnel, light_config.num,
+                            lighting.lut_fr.type, lighting.lut_fr.abs_input);
+            value = "(" + std::to_string(lighting.lut_fr.scale) + " * " + value + ")";
 
             // Enabled for difffuse lighting alpha component
             if (lighting.fresnel_selector == LightingRegs::LightingFresnelSelector::PrimaryAlpha ||
@@ -711,11 +774,11 @@ static void WriteLighting(std::string& out, const PicaShaderConfig& config) {
 
         // Compute primary fragment color (diffuse lighting) function
         out += "diffuse_sum.rgb += ((" + light_src + ".diffuse * " + dot_product + ") + " +
-               light_src + ".ambient) * " + dist_atten + ";\n";
+               light_src + ".ambient) * " + dist_atten + " * " + spot_atten + ";\n";
 
         // Compute secondary fragment color (specular lighting) function
         out += "specular_sum.rgb += (" + specular_0 + " + " + specular_1 + ") * " +
-               clamp_highlights + " * " + dist_atten + ";\n";
+               clamp_highlights + " * " + dist_atten + " * " + spot_atten + ";\n";
     }
 
     // Sum final lighting result
@@ -947,10 +1010,6 @@ std::string GenerateFragmentShader(const PicaShaderConfig& config) {
 #define NUM_TEV_STAGES 6
 #define NUM_LIGHTS 8
 
-// Texture coordinate offsets and scales
-#define OFFSET_256 (0.5 / 256.0)
-#define SCALE_256 (255.0 / 256.0)
-
 in vec4 primary_color;
 in vec2 texcoord[3];
 in float texcoord0_w;
@@ -967,6 +1026,7 @@ struct LightSrc {
     vec3 diffuse;
     vec3 ambient;
     vec3 position;
+    vec3 spot_direction;
     float dist_atten_bias;
     float dist_atten_scale;
 };
@@ -991,7 +1051,7 @@ layout (std140) uniform shader_data {
 };
 
 uniform sampler2D tex[3];
-uniform sampler1D lut[6];
+uniform samplerBuffer lighting_lut;
 uniform usampler1D fog_lut;
 uniform sampler1D proctex_noise_lut;
 uniform sampler1D proctex_color_map;
@@ -1002,6 +1062,24 @@ uniform sampler1D proctex_diff_lut;
 // Rotate the vector v by the quaternion q
 vec3 quaternion_rotate(vec4 q, vec3 v) {
     return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+}
+
+float LookupLightingLUT(int lut_index, int index, float delta) {
+    vec2 entry = texelFetch(lighting_lut, lut_index * 256 + index).rg;
+    return entry.r + entry.g * delta;
+}
+
+float LookupLightingLUTUnsigned(int lut_index, float pos) {
+    int index = clamp(int(pos * 256.0), 0, 255);
+    float delta = pos * 256.0 - index;
+    return LookupLightingLUT(lut_index, index, delta);
+}
+
+float LookupLightingLUTSigned(int lut_index, float pos) {
+    int index = clamp(int(pos * 128.0), -128, 127);
+    float delta = pos * 128.0 - index;
+    if (index < 0) index += 256;
+    return LookupLightingLUT(lut_index, index, delta);
 }
 
 )";

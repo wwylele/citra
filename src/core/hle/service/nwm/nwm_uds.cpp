@@ -190,7 +190,7 @@ static void InitializeWithVersion(Interface* self) {
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 2);
     rb.Push(RESULT_SUCCESS);
-    rb.PushCopyHandles(Kernel::g_handle_table.Create(connection_status_event).MoveFrom());
+    rb.PushCopyHandles(Kernel::g_handle_table.Create(connection_status_event).Unwrap());
 
     LOG_DEBUG(Service_NWM, "called sharedmem_size=0x%08X, version=0x%08X, sharedmem_handle=0x%08X",
               sharedmem_size, version, sharedmem_handle);
@@ -214,6 +214,11 @@ static void GetConnectionStatus(Interface* self) {
 
     rb.Push(RESULT_SUCCESS);
     rb.PushRaw(connection_status);
+
+    // Reset the bitmask of changed nodes after each call to this
+    // function to prevent falsely informing games of outstanding
+    // changes in subsequent calls.
+    connection_status.changed_nodes = 0;
 
     LOG_DEBUG(Service_NWM, "called");
 }
@@ -260,7 +265,7 @@ static void Bind(Interface* self) {
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 2);
 
     rb.Push(RESULT_SUCCESS);
-    rb.PushCopyHandles(Kernel::g_handle_table.Create(event).MoveFrom());
+    rb.PushCopyHandles(Kernel::g_handle_table.Create(event).Unwrap());
 }
 
 /**
@@ -314,8 +319,11 @@ static void BeginHostingNetwork(Interface* self) {
     // The host is always the first node
     connection_status.network_node_id = 1;
     node_info[0].network_node_id = 1;
+    connection_status.nodes[0] = connection_status.network_node_id;
     // Set the bit 0 in the nodes bitmask to indicate that node 1 is already taken.
     connection_status.node_bitmask |= 1;
+    // Notify the application that the first node was set.
+    connection_status.changed_nodes |= 1;
 
     // If the game has a preferred channel, use that instead.
     if (network_info.channel != 0)
@@ -352,6 +360,8 @@ static void DestroyNetwork(Interface* self) {
     // Unschedule the beacon broadcast event.
     CoreTiming::UnscheduleEvent(beacon_broadcast_event, 0);
 
+    // TODO(Subv): Check if connection_status is indeed reset after this call.
+    connection_status = {};
     connection_status.status = static_cast<u8>(NetworkStatus::NotConnected);
     connection_status_event->Signal();
 
@@ -531,6 +541,42 @@ static void BeaconBroadcastCallback(u64 userdata, int cycles_late) {
     // Start broadcasting the network, send a beacon frame every 102.4ms.
     CoreTiming::ScheduleEvent(msToCycles(DefaultBeaconInterval * MillisecondsPerTU) - cycles_late,
                               beacon_broadcast_event, 0);
+}
+
+/*
+ * Returns an available index in the nodes array for the
+ * currently-hosted UDS network.
+ */
+static u32 GetNextAvailableNodeId() {
+    ASSERT_MSG(connection_status.status == static_cast<u32>(NetworkStatus::ConnectedAsHost),
+               "Can not accept clients if we're not hosting a network");
+
+    for (unsigned index = 0; index < connection_status.max_nodes; ++index) {
+        if ((connection_status.node_bitmask & (1 << index)) == 0)
+            return index;
+    }
+
+    // Any connection attempts to an already full network should have been refused.
+    ASSERT_MSG(false, "No available connection slots in the network");
+}
+
+/*
+ * Called when a client connects to an UDS network we're hosting,
+ * updates the connection status and signals the update event.
+ * @param network_node_id Network Node Id of the connecting client.
+ */
+void OnClientConnected(u16 network_node_id) {
+    ASSERT_MSG(connection_status.status == static_cast<u32>(NetworkStatus::ConnectedAsHost),
+               "Can not accept clients if we're not hosting a network");
+    ASSERT_MSG(connection_status.total_nodes < connection_status.max_nodes,
+               "Can not accept connections on a full network");
+
+    u32 node_id = GetNextAvailableNodeId();
+    connection_status.node_bitmask |= 1 << node_id;
+    connection_status.changed_nodes |= 1 << node_id;
+    connection_status.nodes[node_id] = network_node_id;
+    connection_status.total_nodes++;
+    connection_status_event->Signal();
 }
 
 const Interface::FunctionInfo FunctionTable[] = {

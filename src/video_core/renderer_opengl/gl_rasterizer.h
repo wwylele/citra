@@ -125,6 +125,7 @@ private:
         alignas(16) GLvec3 diffuse;
         alignas(16) GLvec3 ambient;
         alignas(16) GLvec3 position;
+        alignas(16) GLvec3 spot_direction; // negated
         GLfloat dist_atten_bias;
         GLfloat dist_atten_scale;
     };
@@ -153,7 +154,7 @@ private:
     };
 
     static_assert(
-        sizeof(UniformData) == 0x3E0,
+        sizeof(UniformData) == 0x460,
         "The size of the UniformData structure has changed, update the structure in the shader");
     static_assert(sizeof(UniformData) < 16384,
                   "UniformData structure must be less than 16kb as per the OpenGL spec");
@@ -241,6 +242,9 @@ private:
     /// Syncs the specified light's position to match the PICA register
     void SyncLightPosition(int light_index);
 
+    /// Syncs the specified spot light direcition to match the PICA register
+    void SyncLightSpotDirection(int light_index);
+
     /// Syncs the specified light's distance attenuation bias to match the PICA register
     void SyncLightDistanceAttenuationBias(int light_index);
 
@@ -259,7 +263,7 @@ private:
 
     struct {
         UniformData data;
-        bool lut_dirty[6];
+        std::array<bool, Pica::LightingRegs::NumLightingSampler> lut_dirty;
         bool fog_lut_dirty;
         bool proctex_noise_lut_dirty;
         bool proctex_color_map_dirty;
@@ -275,8 +279,9 @@ private:
     OGLBuffer uniform_buffer;
     OGLFramebuffer framebuffer;
 
-    std::array<OGLTexture, 6> lighting_luts;
-    std::array<std::array<GLvec4, 256>, 6> lighting_lut_data{};
+    OGLBuffer lighting_lut_buffer;
+    OGLTexture lighting_lut;
+    std::array<std::array<GLvec2, 256>, Pica::LightingRegs::NumLightingSampler> lighting_lut_data{};
 
     OGLTexture fog_lut;
     std::array<GLuint, 128> fog_lut_data{};
