@@ -9,6 +9,7 @@
 #include "core/arm/arm_interface.h"
 #include "core/arm/dynarmic/arm_dynarmic.h"
 #include "core/arm/dyncom/arm_dyncom.h"
+#include "core/cheat/cheat_core.h"
 #include "core/core.h"
 #include "core/core_timing.h"
 #include "core/gdbstub/gdbstub.h"
@@ -152,6 +153,7 @@ System::ResultStatus System::Init(EmuWindow* emu_window, u32 system_mode) {
     Kernel::Init(system_mode);
     Service::Init();
     AudioCore::Init();
+    CheatCore::Init();
     GDBStub::Init();
 
     if (!VideoCore::Init(emu_window)) {
@@ -170,6 +172,7 @@ System::ResultStatus System::Init(EmuWindow* emu_window, u32 system_mode) {
 void System::Shutdown() {
     GDBStub::Shutdown();
     AudioCore::Shutdown();
+    CheatCore::Shutdown();
     VideoCore::Shutdown();
     Service::Shutdown();
     Kernel::Shutdown();

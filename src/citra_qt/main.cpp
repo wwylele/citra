@@ -14,6 +14,7 @@
 #include <QtGui>
 #include <QtWidgets>
 #include "citra_qt/bootmanager.h"
+#include "citra_qt/cheat/cheat_gui.h"
 #include "citra_qt/configuration/config.h"
 #include "citra_qt/configuration/configure_dialog.h"
 #include "citra_qt/debugger/graphics/graphics.h"
@@ -229,6 +230,7 @@ void GMainWindow::RestoreUIState() {
     microProfileDialog->setVisible(UISettings::values.microprofile_visible);
 #endif
 
+	ui.action_Cheats->setEnabled(false);
     game_list->LoadInterfaceLayout();
 
     ui.action_Single_Window_Mode->setChecked(UISettings::values.single_window_mode);
@@ -264,6 +266,7 @@ void GMainWindow::ConnectMenuEvents() {
     connect(ui.action_Exit, &QAction::triggered, this, &QMainWindow::close);
 
     // Emulation
+	connect(ui.action_Cheats, &QAction::triggered, this, &GMainWindow::OnCheats);
     connect(ui.action_Start, &QAction::triggered, this, &GMainWindow::OnStartGame);
     connect(ui.action_Pause, &QAction::triggered, this, &GMainWindow::OnPauseGame);
     connect(ui.action_Stop, &QAction::triggered, this, &GMainWindow::OnStopGame);
@@ -402,6 +405,7 @@ void GMainWindow::BootGame(const QString& filename) {
             Qt::BlockingQueuedConnection);
 
     // Update the GUI
+    ui.action_Cheats->setEnabled(false);
     registersWidget->OnDebugModeEntered();
     if (ui.action_Single_Window_Mode->isChecked()) {
         game_list->hide();
@@ -435,6 +439,7 @@ void GMainWindow::ShutdownGame() {
     disconnect(render_window, SIGNAL(Closed()), this, SLOT(OnStopGame()));
 
     // Update the GUI
+    ui.action_Cheats->setEnabled(false);
     ui.action_Start->setEnabled(false);
     ui.action_Start->setText(tr("Start"));
     ui.action_Pause->setEnabled(false);
@@ -557,7 +562,7 @@ void GMainWindow::OnStartGame() {
     connect(emu_thread.get(), SIGNAL(ErrorThrown(Core::System::ResultStatus, std::string)), this,
             SLOT(OnCoreError(Core::System::ResultStatus, std::string)));
 
-    ui.action_Start->setEnabled(false);
+	ui.action_Cheats->setEnabled(true);
     ui.action_Start->setText(tr("Continue"));
 
     ui.action_Pause->setEnabled(true);
@@ -567,6 +572,7 @@ void GMainWindow::OnStartGame() {
 void GMainWindow::OnPauseGame() {
     emu_thread->SetRunning(false);
 
+    ui.action_Cheats->setEnabled(true);
     ui.action_Start->setEnabled(true);
     ui.action_Pause->setEnabled(false);
     ui.action_Stop->setEnabled(true);
@@ -622,6 +628,11 @@ void GMainWindow::OnToggleFilterBar() {
 void GMainWindow::OnSwapScreens() {
     Settings::values.swap_screen = !Settings::values.swap_screen;
     Settings::Apply();
+}
+
+void GMainWindow::OnCheats() {
+    CheatDialog cheat_dialog(this);
+    cheat_dialog.exec();
 }
 
 void GMainWindow::OnCreateGraphicsSurfaceViewer() {

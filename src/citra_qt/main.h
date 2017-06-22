@@ -122,6 +122,7 @@ private slots:
     void OnMenuRecentFile();
     void OnSwapScreens();
     void OnConfigure();
+    void OnCheats();
     void OnToggleFilterBar();
     void OnDisplayTitleBars(bool);
     void ToggleWindowMode();

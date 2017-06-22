@@ -4,8 +4,11 @@
 
 #pragma once
 
+#include <algorithm>
+#include <cctype>
 #include <cstdarg>
 #include <cstddef>
+#include <functional>
 #include <iomanip>
 #include <sstream>
 #include <string>
@@ -134,4 +137,8 @@ bool ComparePartialString(InIt begin, InIt end, const char* other) {
  * NUL-terminated then the string ends at max_len characters.
  */
 std::string StringFromFixedZeroTerminatedBuffer(const char* buffer, size_t max_len);
+
+std::string Trim(const std::string& str, const std::string delimiters = " \f\n\r\t\v");
+
+std::string Join(const std::vector<std::string>& elements, const char* const separator);
 }
