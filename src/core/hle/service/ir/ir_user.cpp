@@ -13,6 +13,7 @@
 #include "core/hle/service/ir/extra_hid.h"
 #include "core/hle/service/ir/ir.h"
 #include "core/hle/service/ir/ir_user.h"
+#include "core/hle/service/ir/other_3ds.h"
 
 namespace Service {
 namespace IR {
@@ -135,6 +136,31 @@ public:
         return true;
     }
 
+    bool Clear() {
+        info.packet_count = 0;
+        info.begin_index = 0;
+        info.end_index = 0;
+        UpdateBufferInfo();
+    }
+
+    void GetFreeAndUsed(u32& free_size, u32& free_count, u32& used_size, u32& used_count) {
+        // finds free space in data buffer
+        u32 free_space;
+        if (info.packet_count == 0) {
+            free_size = max_data_size;
+        } else {
+            const u32 last_index = (info.end_index + max_packet_count - 1) % max_packet_count;
+            const PacketInfo first = GetPacketInfo(info.begin_index);
+            const PacketInfo last = GetPacketInfo(last_index);
+            u32 write_offset = (last.offset + last.size) % max_data_size;
+            free_size = (first.offset + max_data_size - write_offset) % max_data_size;
+        }
+
+        used_size = max_data_size - free_size;
+        used_count = info.packet_count;
+        free_count = max_packet_count - info.packet_count;
+    }
+
 private:
     struct BufferInfo {
         u32_le begin_index;
@@ -186,6 +212,7 @@ private:
 static Kernel::SharedPtr<Kernel::Event> conn_status_event, send_event, receive_event;
 static Kernel::SharedPtr<Kernel::SharedMemory> shared_memory;
 static std::unique_ptr<ExtraHID> extra_hid;
+static std::unique_ptr<Other3DS> other_3ds;
 static IRDevice* connected_device;
 static boost::optional<BufferManager> receive_buffer;
 
@@ -253,13 +280,15 @@ static void PutToReceive(const std::vector<u8>& payload) {
  *  Outputs:
  *      1 : Result of function, 0 on success, otherwise error code
  */
+u32 send_buff_size;
+u32 send_buff_packet_count;
 static void InitializeIrNopShared(Interface* self) {
     IPC::RequestParser rp(Kernel::GetCommandBuffer(), 0x18, 6, 2);
     const u32 shared_buff_size = rp.Pop<u32>();
     const u32 recv_buff_size = rp.Pop<u32>();
     const u32 recv_buff_packet_count = rp.Pop<u32>();
-    const u32 send_buff_size = rp.Pop<u32>();
-    const u32 send_buff_packet_count = rp.Pop<u32>();
+    /*const u32*/ send_buff_size = rp.Pop<u32>();
+    /*const u32*/ send_buff_packet_count = rp.Pop<u32>();
     const u8 baud_rate = rp.Pop<u8>();
     const Kernel::Handle handle = rp.PopHandle();
 
@@ -323,6 +352,35 @@ static void RequireConnection(Interface* self) {
     rb.Push(RESULT_SUCCESS);
 
     LOG_INFO(Service_IR, "called, device_id = %u", device_id);
+}
+
+static void AutoConnection(Interface* self) {
+    IPC::RequestParser rp(Kernel::GetCommandBuffer(), 0x07, 11, 0);
+    const u8 device_id = rp.Pop<u8>();
+    const u64 send_reply_delay = rp.Pop<u64>();
+    const u64 wait_request_min = rp.Pop<u64>();
+    const u64 wait_request_max = rp.Pop<u64>();
+    const u64 wait_reply_min = rp.Pop<u64>();
+    const u64 wait_reply_max = rp.Pop<u64>();
+
+    LOG_WARNING(Service_IR, "called, device_id=%u, A=%llu, B=%llu, C=%llu, D=%llu, E=%llu",
+                device_id, send_reply_delay, wait_request_min, wait_request_max, wait_reply_min,
+                wait_reply_max);
+
+    u8* shared_memory_ptr = shared_memory->GetPointer();
+    other_3ds = std::make_unique<Other3DS>(PutToReceive);
+    shared_memory_ptr[offsetof(SharedMemoryHeader, connection_status)] = 2;
+    shared_memory_ptr[offsetof(SharedMemoryHeader, connection_role)] = other_3ds->GetRole();
+    shared_memory_ptr[offsetof(SharedMemoryHeader, connected)] = 1;
+
+    connected_device = other_3ds.get();
+    connected_device->OnConnect();
+    conn_status_event->Signal();
+
+    LOG_WARNING(Service_IR, "connected");
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    rb.Push(RESULT_SUCCESS);
 }
 
 /**
@@ -479,14 +537,53 @@ static void ReleaseReceivedData(Interface* self) {
     LOG_TRACE(Service_IR, "called, count=%u", count);
 }
 
+static void ClearReceiveBuffer(Interface* self) {
+    IPC::RequestParser rp(Kernel::GetCommandBuffer(), 0x3, 0, 0);
+    receive_buffer->Clear();
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    rb.Push(RESULT_SUCCESS);
+}
+
+static void GetLatestReceiveErrorResult(Interface* self) {
+    IPC::RequestParser rp(Kernel::GetCommandBuffer(), 0x4, 1, 0);
+    rp.Pop<u32>();
+    IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
+    rb.Push(RESULT_SUCCESS);
+    rb.Push(RESULT_SUCCESS);
+}
+
+static void GetReceiveSizeFreeAndUsed(Interface* self) {
+    IPC::RequestParser rp(Kernel::GetCommandBuffer(), 0x16, 0, 0);
+    u32 free_size, free_count, used_size, used_count;
+    receive_buffer->GetFreeAndUsed(free_size, free_count, used_size, used_count);
+    IPC::RequestBuilder rb = rp.MakeBuilder(5, 0);
+    rb.Push(RESULT_SUCCESS);
+    rb.Push(free_size);
+    rb.Push(free_count);
+    rb.Push(used_size);
+    rb.Push(used_count);
+}
+
+static void GetSendSizeFreeAndUsed(Interface* self) {
+    IPC::RequestParser rp(Kernel::GetCommandBuffer(), 0x15, 0, 0);
+    u32 free_size, free_count, used_size, used_count;
+    receive_buffer->GetFreeAndUsed(free_size, free_count, used_size, used_count);
+    IPC::RequestBuilder rb = rp.MakeBuilder(5, 0);
+    rb.Push(RESULT_SUCCESS);
+    rb.Push(send_buff_size);
+    rb.Push(send_buff_packet_count);
+    rb.Push<u32>(0);
+    rb.Push<u32>(0);
+}
+
 const Interface::FunctionInfo FunctionTable[] = {
     {0x00010182, nullptr, "InitializeIrNop"},
     {0x00020000, FinalizeIrNop, "FinalizeIrNop"},
-    {0x00030000, nullptr, "ClearReceiveBuffer"},
+    {0x00030000, ClearReceiveBuffer, "ClearReceiveBuffer"},
     {0x00040000, nullptr, "ClearSendBuffer"},
     {0x000500C0, nullptr, "WaitConnection"},
     {0x00060040, RequireConnection, "RequireConnection"},
-    {0x000702C0, nullptr, "AutoConnection"},
+    {0x000702C0, AutoConnection, "AutoConnection"},
     {0x00080000, nullptr, "AnyConnection"},
     {0x00090000, Disconnect, "Disconnect"},
     {0x000A0000, GetReceiveEvent, "GetReceiveEvent"},
@@ -496,12 +593,12 @@ const Interface::FunctionInfo FunctionTable[] = {
     {0x000E0042, nullptr, "SendIrNopLarge"},
     {0x000F0040, nullptr, "ReceiveIrnop"},
     {0x00100042, nullptr, "ReceiveIrnopLarge"},
-    {0x00110040, nullptr, "GetLatestReceiveErrorResult"},
+    {0x00110040, GetLatestReceiveErrorResult, "GetLatestReceiveErrorResult"},
     {0x00120040, nullptr, "GetLatestSendErrorResult"},
     {0x00130000, nullptr, "GetConnectionStatus"},
     {0x00140000, nullptr, "GetTryingToConnectStatus"},
-    {0x00150000, nullptr, "GetReceiveSizeFreeAndUsed"},
-    {0x00160000, nullptr, "GetSendSizeFreeAndUsed"},
+    {0x00150000, GetReceiveSizeFreeAndUsed, "GetReceiveSizeFreeAndUsed"},
+    {0x00160000, GetSendSizeFreeAndUsed, "GetSendSizeFreeAndUsed"},
     {0x00170000, nullptr, "GetConnectionRole"},
     {0x00180182, InitializeIrNopShared, "InitializeIrNopShared"},
     {0x00190040, ReleaseReceivedData, "ReleaseReceivedData"},
@@ -524,6 +621,8 @@ void InitUser() {
     receive_buffer = boost::none;
 
     extra_hid = std::make_unique<ExtraHID>(PutToReceive);
+
+    InitIRStream();
 
     connected_device = nullptr;
 }
