@@ -367,17 +367,23 @@ static void AutoConnection(Interface* self) {
                 device_id, send_reply_delay, wait_request_min, wait_request_max, wait_reply_min,
                 wait_reply_max);
 
+    static int counter = 100;
+    counter--;
     u8* shared_memory_ptr = shared_memory->GetPointer();
-    other_3ds = std::make_unique<Other3DS>(PutToReceive);
-    shared_memory_ptr[offsetof(SharedMemoryHeader, connection_status)] = 2;
-    shared_memory_ptr[offsetof(SharedMemoryHeader, connection_role)] = other_3ds->GetRole();
-    shared_memory_ptr[offsetof(SharedMemoryHeader, connected)] = 1;
+    if (counter < 0) {
 
-    connected_device = other_3ds.get();
-    connected_device->OnConnect();
-    conn_status_event->Signal();
+        other_3ds = std::make_unique<Other3DS>(PutToReceive);
+        shared_memory_ptr[offsetof(SharedMemoryHeader, connection_status)] = 2;
+        shared_memory_ptr[offsetof(SharedMemoryHeader, connection_role)] = other_3ds->GetRole();
+        shared_memory_ptr[offsetof(SharedMemoryHeader, connected)] = 1;
 
-    LOG_WARNING(Service_IR, "connected");
+        connected_device = other_3ds.get();
+        connected_device->OnConnect();
+        conn_status_event->Signal();
+        LOG_WARNING(Service_IR, "connected");
+    } else {
+        shared_memory_ptr[offsetof(SharedMemoryHeader, connection_status)] = 1;
+    }
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
     rb.Push(RESULT_SUCCESS);
@@ -597,7 +603,7 @@ const Interface::FunctionInfo FunctionTable[] = {
     {0x00120040, nullptr, "GetLatestSendErrorResult"},
     {0x00130000, nullptr, "GetConnectionStatus"},
     {0x00140000, nullptr, "GetTryingToConnectStatus"},
-    {0x00150000, GetReceiveSizeFreeAndUsed, "GetReceiveSizeFreeAndUsed"},
+    {0x00150000, nullptr, "GetReceiveSizeFreeAndUsed"},
     {0x00160000, GetSendSizeFreeAndUsed, "GetSendSizeFreeAndUsed"},
     {0x00170000, nullptr, "GetConnectionRole"},
     {0x00180182, InitializeIrNopShared, "InitializeIrNopShared"},

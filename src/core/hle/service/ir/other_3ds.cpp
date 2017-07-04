@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>  // mkfifo
 #include <sys/types.h> // mkfifo
+#include <thread>
 #include "common/alignment.h"
 #include "common/bit_field.h"
 #include "common/string_util.h"
@@ -16,6 +17,8 @@ namespace IR {
 
 const char* pipe_p2s = "/tmp/citra_ir_p2s";
 const char* pipe_s2p = "/tmp/citra_ir_s2p";
+const char* pipe_p2s_flag = "/tmp/citra_ir_p2s_flag";
+const char* pipe_s2p_flag = "/tmp/citra_ir_s2p_flag";
 
 bool CheckForAnotherInstance() {
 
@@ -91,76 +94,81 @@ void WritePacket(int pipe, std::vector<u8> data) {
     if (size) WritePipe(pipe, data.data(), size);
 }
 
-
-
 bool is_primary;
-int pipe_read, pipe_write;
+int pipe_read, pipe_write, pipe_read_flag, pipe_write_flag;
 int stream_beat;
 
 Other3DS* other_3ds;
 std::vector<u8> waiting_packet;
-void StreamIn() {
-    WritePacket(pipe_write, waiting_packet);
-    waiting_packet.clear();
-}
 
-void StreamOut() {
-    auto packet = ReadPacket(pipe_read);
-    if (packet.size()) {
-        if (other_3ds) {
-            other_3ds->Send(packet);
-        } else {
-        }
+std::thread* shant;
 
+void Shant() {
+    while (1) {
+        waiting_packet = ReadPacket(pipe_read);
+        CoreTiming::ScheduleEvent_Threadsafe(msToCycles(10),  stream_beat, 0);
     }
-}
-
-void StreamBeat() {
-    StreamOut();
-    StreamIn();
 }
 
 void InitIRStream() {
     if (CheckForAnotherInstance()) {
         is_primary = false;
         if ((pipe_read = open(pipe_p2s, O_RDONLY)) < 0) throw;
+        if ((pipe_read_flag = open(pipe_p2s_flag, O_RDONLY)) < 0) throw;
         if ((pipe_write = open(pipe_s2p, O_WRONLY)) < 0) throw;
+        if ((pipe_write_flag = open(pipe_s2p_flag, O_WRONLY)) < 0) throw;
         LOG_INFO(Service_IR, "As Secondary");
     } else {
         is_primary = true;
         mkfifo(pipe_p2s, S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
+        mkfifo(pipe_p2s_flag, S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
         mkfifo(pipe_s2p, S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
+        mkfifo(pipe_s2p_flag, S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
         LOG_INFO(Service_IR, "--");
         if ((pipe_write = open(pipe_p2s, O_WRONLY)) < 0) throw;
+        if ((pipe_write_flag = open(pipe_p2s_flag, O_WRONLY)) < 0) throw;
         if ((pipe_read = open(pipe_s2p, O_RDONLY)) < 0) throw;
+        if ((pipe_read_flag = open(pipe_s2p_flag, O_RDONLY)) < 0) throw;
         LOG_INFO(Service_IR, "As Primary");
-        StreamIn();
     }
 
     stream_beat =
             CoreTiming::RegisterEvent("Other3DS", [](u64, int cycles_late) {
-                StreamBeat();
-                CoreTiming::ScheduleEvent(msToCycles(1) - cycles_late,
-                                          stream_beat);
+                if (other_3ds) {
+                    LOG_INFO(Service_IR, "What");
+                    other_3ds->SendHaha(waiting_packet);
+                }
             });
-    CoreTiming::ScheduleEvent(0,
-                              stream_beat);
+    shant = new std::thread(Shant);
 }
 
 Other3DS::Other3DS(SendFunc send_func) : IRDevice(send_func) {
-    other_3ds = this;
+
 }
 
 void Other3DS::OnConnect() {
-
+    if (is_primary) {
+        WritePacket(pipe_write_flag, std::vector<u8>());
+        ReadPacket(pipe_read_flag);
+    } else {
+        ReadPacket(pipe_read_flag);
+        WritePacket(pipe_write_flag, std::vector<u8>());
+    }
+    other_3ds = this;
 }
 
-void Other3DS::OnDisconnect() {}
+void Other3DS::OnDisconnect() {
+    other_3ds = nullptr;
+}
+
+void Other3DS::SendHaha(const std::vector<u8>& data) {
+    Send(data);
+}
 
 void Other3DS::OnReceive(const std::vector<u8>& data) {
     LOG_ERROR(Service_IR, "Received request: %s",
               Common::ArrayToString(data.data(), data.size()).c_str());
-    waiting_packet = data;
+    WritePacket(pipe_write, data);
 }
 
 u8 Other3DS::GetRole() {

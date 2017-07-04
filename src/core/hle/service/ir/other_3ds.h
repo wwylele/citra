@@ -20,6 +20,7 @@ public:
     void OnConnect() override;
     void OnDisconnect() override;
     void OnReceive(const std::vector<u8>& data) override;
+    void SendHaha(const std::vector<u8>& data);
 
     u8 GetRole();
     friend void StreamOut();
