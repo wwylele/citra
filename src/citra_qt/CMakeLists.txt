@@ -28,6 +28,7 @@ set(SRCS
             game_list.cpp
             hotkeys.cpp
             main.cpp
+            stereoscopic_controller.cpp
             ui_settings.cpp
             citra-qt.rc
             Info.plist
@@ -60,6 +61,7 @@ set(HEADERS
             game_list_p.h
             hotkeys.h
             main.h
+            stereoscopic_controller.h
             ui_settings.h
             )
 

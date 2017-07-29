@@ -105,3 +105,11 @@ void EmuWindow::UpdateCurrentFramebufferLayout(unsigned width, unsigned height) 
     }
     NotifyFramebufferLayoutChanged(layout);
 }
+
+void EmuWindow::DepthSliderChanged(float value) {
+    depth_slider = value;
+}
+
+void EmuWindow::StereoscopicModeChanged(StereoscopicMode mode) {
+    stereoscopic_mode = mode;
+}

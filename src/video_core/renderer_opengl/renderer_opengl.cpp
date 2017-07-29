@@ -103,12 +103,12 @@ void RendererOpenGL::SwapBuffers() {
     OpenGLState prev_state = OpenGLState::GetCurState();
     state.Apply();
 
-    for (int i : {0, 1}) {
-        const auto& framebuffer = GPU::g_regs.framebuffer_config[i];
+    for (int i : {0, 1, 2}) {
+        const auto& framebuffer = GPU::g_regs.framebuffer_config[i != 2 ? 0 : 1];
 
         // Main LCD (0): 0x1ED02204, Sub LCD (1): 0x1ED02A04
         u32 lcd_color_addr =
-            (i == 0) ? LCD_REG_INDEX(color_fill_top) : LCD_REG_INDEX(color_fill_bottom);
+            (i != 2) ? LCD_REG_INDEX(color_fill_top) : LCD_REG_INDEX(color_fill_bottom);
         lcd_color_addr = HW::VADDR_LCD + 4 * lcd_color_addr;
         LCD::Regs::ColorFill color_fill = {0};
         LCD::Read(color_fill.raw, lcd_color_addr);
@@ -129,7 +129,7 @@ void RendererOpenGL::SwapBuffers() {
                 // performance problem.
                 ConfigureFramebufferTexture(screen_infos[i].texture, framebuffer);
             }
-            LoadFBToScreenInfo(framebuffer, screen_infos[i]);
+            LoadFBToScreenInfo(framebuffer, screen_infos[i], i == 1);
 
             // Resize the texture in case the framebuffer size has changed
             screen_infos[i].texture.width = framebuffer.width;
@@ -160,10 +160,16 @@ void RendererOpenGL::SwapBuffers() {
  * Loads framebuffer from emulated memory into the active OpenGL texture.
  */
 void RendererOpenGL::LoadFBToScreenInfo(const GPU::Regs::FramebufferConfig& framebuffer,
-                                        ScreenInfo& screen_info) {
-
-    const PAddr framebuffer_addr =
-        framebuffer.active_fb == 0 ? framebuffer.address_left1 : framebuffer.address_left2;
+                                        ScreenInfo& screen_info, bool right) {
+    PAddr framebuffer_addr = 0;
+    if (right) {
+        framebuffer_addr = framebuffer.active_fb == 0 ? (framebuffer.address_right1)
+                                                      : (framebuffer.address_right2);
+    }
+    if (framebuffer_addr == 0) {
+        framebuffer_addr =
+            framebuffer.active_fb == 0 ? (framebuffer.address_left1) : (framebuffer.address_left2);
+    }
 
     LOG_TRACE(Render_OpenGL, "0x%08x bytes from 0x%08x(%dx%d), fmt %x",
               framebuffer.stride * framebuffer.height, framebuffer_addr, (int)framebuffer.width,
@@ -354,7 +360,7 @@ void RendererOpenGL::ConfigureFramebufferTexture(TextureInfo& texture,
  * rotation.
  */
 void RendererOpenGL::DrawSingleScreenRotated(const ScreenInfo& screen_info, float x, float y,
-                                             float w, float h) {
+                                             float w, float h, bool left, bool right) {
     auto& texcoords = screen_info.display_texcoords;
 
     std::array<ScreenRectVertex, 4> vertices = {{
@@ -365,12 +371,17 @@ void RendererOpenGL::DrawSingleScreenRotated(const ScreenInfo& screen_info, floa
     }};
 
     state.texture_units[0].texture_2d = screen_info.display_texture;
+    auto color_mask = state.color_mask;
+    state.color_mask.red_enabled = left;
+    state.color_mask.green_enabled = right;
+    state.color_mask.blue_enabled = right;
     state.Apply();
 
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices.data());
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
     state.texture_units[0].texture_2d = 0;
+    state.color_mask = color_mask;
     state.Apply();
 }
 
@@ -395,13 +406,36 @@ void RendererOpenGL::DrawScreens() {
     glUniform1i(uniform_color_texture, 0);
 
     if (layout.top_screen_enabled) {
-        DrawSingleScreenRotated(screen_infos[0], (float)top_screen.left, (float)top_screen.top,
-                                (float)top_screen.GetWidth(), (float)top_screen.GetHeight());
+        switch (render_window->GetStereoscopicMode()) {
+        case EmuWindow::StereoscopicMode::LeftOnly:
+            DrawSingleScreenRotated(screen_infos[0], (float)layout.top_screen.left,
+                                    (float)layout.top_screen.top,
+                                    (float)layout.top_screen.GetWidth(),
+                                    (float)layout.top_screen.GetHeight(), true, true);
+            break;
+        case EmuWindow::StereoscopicMode::RightOnly:
+            DrawSingleScreenRotated(screen_infos[1], (float)layout.top_screen.left,
+                                    (float)layout.top_screen.top,
+                                    (float)layout.top_screen.GetWidth(),
+                                    (float)layout.top_screen.GetHeight(), true, true);
+            break;
+        case EmuWindow::StereoscopicMode::Anaglyph:
+            DrawSingleScreenRotated(screen_infos[0], (float)layout.top_screen.left,
+                                    (float)layout.top_screen.top,
+                                    (float)layout.top_screen.GetWidth(),
+                                    (float)layout.top_screen.GetHeight(), true, false);
+            DrawSingleScreenRotated(screen_infos[1], (float)layout.top_screen.left,
+                                    (float)layout.top_screen.top,
+                                    (float)layout.top_screen.GetWidth(),
+                                    (float)layout.top_screen.GetHeight(), false, true);
+            break;
+        }
     }
     if (layout.bottom_screen_enabled) {
-        DrawSingleScreenRotated(screen_infos[1], (float)bottom_screen.left,
-                                (float)bottom_screen.top, (float)bottom_screen.GetWidth(),
-                                (float)bottom_screen.GetHeight());
+        DrawSingleScreenRotated(screen_infos[2], (float)layout.bottom_screen.left,
+                                (float)layout.bottom_screen.top,
+                                (float)layout.bottom_screen.GetWidth(),
+                                (float)layout.bottom_screen.GetHeight(), true, true);
     }
 
     m_current_frame++;
