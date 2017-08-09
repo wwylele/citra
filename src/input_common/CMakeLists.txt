@@ -2,6 +2,7 @@ set(SRCS
             analog_from_button.cpp
             keyboard.cpp
             main.cpp
+            monolithic_device.cpp
             motion_emu.cpp
             )
 
@@ -9,6 +10,7 @@ set(HEADERS
             analog_from_button.h
             keyboard.h
             main.h
+            monolithic_device.h
             motion_emu.h
             )
 
