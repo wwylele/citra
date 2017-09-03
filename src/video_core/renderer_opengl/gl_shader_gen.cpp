@@ -594,8 +594,8 @@ static void WriteLighting(std::string& out, const PicaShaderConfig& config) {
                 // Note: even if the normal vector is modified by normal map, which is not the
                 // normal of the tangent plane anymore, the half angle vector is still projected
                 // using the modified normal vector.
-                std::string half_angle_proj = "normalize(half_vector) - normal / dot(normal, "
-                                              "normal) * dot(normal, normalize(half_vector))";
+                std::string half_angle_proj =
+                    "normalize(half_vector) - normal * dot(normal, normalize(half_vector))";
                 // Note: the half angle vector projection is confirmed not normalized before the dot
                 // product. The result is in fact not cos(phi) as the name suggested.
                 index = "dot(" + half_angle_proj + ", tangent)";
@@ -750,7 +750,8 @@ static void WriteLighting(std::string& out, const PicaShaderConfig& config) {
         }
 
         // Fresnel
-        if (lighting.lut_fr.enable &&
+        // Note: only the last entry in the light slots applies the Fresnel factor
+        if (light_index == lighting.src_num - 1 && lighting.lut_fr.enable &&
             LightingRegs::IsLightingSamplerSupported(lighting.config,
                                                      LightingRegs::LightingSampler::Fresnel)) {
             // Lookup fresnel LUT value
@@ -759,17 +760,17 @@ static void WriteLighting(std::string& out, const PicaShaderConfig& config) {
                             lighting.lut_fr.type, lighting.lut_fr.abs_input);
             value = "(" + std::to_string(lighting.lut_fr.scale) + " * " + value + ")";
 
-            // Enabled for difffuse lighting alpha component
+            // Enabled for diffuse lighting alpha component
             if (lighting.fresnel_selector == LightingRegs::LightingFresnelSelector::PrimaryAlpha ||
                 lighting.fresnel_selector == LightingRegs::LightingFresnelSelector::Both) {
-                out += "diffuse_sum.a  *= " + value + ";\n";
+                out += "diffuse_sum.a = " + value + ";\n";
             }
 
             // Enabled for the specular lighting alpha component
             if (lighting.fresnel_selector ==
                     LightingRegs::LightingFresnelSelector::SecondaryAlpha ||
                 lighting.fresnel_selector == LightingRegs::LightingFresnelSelector::Both) {
-                out += "specular_sum.a *= " + value + ";\n";
+                out += "specular_sum.a = " + value + ";\n";
             }
         }
 
