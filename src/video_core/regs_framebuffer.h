@@ -281,7 +281,41 @@ struct FramebufferRegs {
         ASSERT_MSG(false, "Unknown depth format {}", static_cast<u32>(format));
     }
 
-    INSERT_PADDING_WORDS(0x10); // Gas related registers
+    enum class GasLutInput : u32 {
+        GasDensity = 0,
+        LightFactor = 1,
+    };
+
+    enum class GasDepthFunction : u32 {
+        Never = 0,
+        Always = 1,
+        GreaterThan = 2,
+        LessThan = 3,
+    };
+
+    struct {
+        union {
+            BitField<0, 8, u32> min_intensity;
+            BitField<8, 8, u32> max_intensity;
+            BitField<16, 8, u32> density_attenuation;
+        } light_xy, light_z;
+
+        union {
+            BitField<0, 8, u32> z_shading_effect;
+            BitField<8, 1, GasLutInput> lut_input;
+        };
+
+        BitField<0, 16, u32> lut_index;
+        u32 lut_data;
+        BitField<0, 16, u32> auto_acc_reset;
+
+        union {
+            BitField<0, 24, u32> delta_z; // fixed0.16.8
+            BitField<24, 2, GasDepthFunction> depth_function;
+        };
+    } gas;
+
+    INSERT_PADDING_WORDS(0x9);
 
     union {
         BitField<0, 16, u32> constant; // float1.5.10

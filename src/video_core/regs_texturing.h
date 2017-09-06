@@ -397,8 +397,14 @@ struct TexturingRegs {
         Gas = 7,
     };
 
+    enum class GasShadingDensitySrc : u32 {
+        PlainDensity = 0,
+        DepthDensity = 1,
+    };
+
     union {
         BitField<0, 3, FogMode> fog_mode;
+        BitField<3, 1, GasShadingDensitySrc> gas_shading_density_src;
         BitField<16, 1, u32> fog_flip;
 
         union {
@@ -424,7 +430,10 @@ struct TexturingRegs {
         BitField<16, 8, u32> b;
     } fog_color;
 
-    INSERT_PADDING_WORDS(0x4);
+    INSERT_PADDING_WORDS(0x2);
+
+    BitField<0, 16, u32> gas_attenuation; // float1.5.10
+    BitField<0, 16, u32> gas_acc_max;     // float1.5.10
 
     BitField<0, 16, u32> fog_lut_offset;
 
