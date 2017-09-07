@@ -28,6 +28,31 @@ struct State {
 
     Shader::AttributeBuffer input_default_attributes;
 
+    union ColorEntry {
+        u32 raw;
+        BitField<0, 8, u32> r;
+        BitField<8, 8, u32> g;
+        BitField<16, 8, u32> b;
+        BitField<24, 8, u32> a;
+
+        Math::Vec4<u8> ToVector() const {
+            return {static_cast<u8>(r), static_cast<u8>(g), static_cast<u8>(b),
+                    static_cast<u8>(a)};
+        }
+    };
+
+    union ColorDifferenceEntry {
+        u32 raw;
+        BitField<0, 8, s32> r; // half of the difference between two ColorEntry
+        BitField<8, 8, s32> g;
+        BitField<16, 8, s32> b;
+        BitField<24, 8, s32> a;
+
+        Math::Vec4<s32> ToVector() const {
+            return Math::Vec4<s32>{r, g, b, a} * 2;
+        }
+    };
+
     struct ProcTex {
         union ValueEntry {
             u32 raw;
@@ -46,31 +71,6 @@ struct State {
 
             float DiffToFloat() const {
                 return static_cast<float>(difference) / 4095.f;
-            }
-        };
-
-        union ColorEntry {
-            u32 raw;
-            BitField<0, 8, u32> r;
-            BitField<8, 8, u32> g;
-            BitField<16, 8, u32> b;
-            BitField<24, 8, u32> a;
-
-            Math::Vec4<u8> ToVector() const {
-                return {static_cast<u8>(r), static_cast<u8>(g), static_cast<u8>(b),
-                        static_cast<u8>(a)};
-            }
-        };
-
-        union ColorDifferenceEntry {
-            u32 raw;
-            BitField<0, 8, s32> r; // half of the difference between two ColorEntry
-            BitField<8, 8, s32> g;
-            BitField<16, 8, s32> b;
-            BitField<24, 8, s32> a;
-
-            Math::Vec4<s32> ToVector() const {
-                return Math::Vec4<s32>{r, g, b, a} * 2;
             }
         };
 
@@ -125,6 +125,11 @@ struct State {
 
         std::array<LutEntry, 128> lut;
     } fog;
+
+    struct {
+        std::array<ColorEntry, 8> color_table;
+        std::array<ColorDifferenceEntry, 8> color_diff_table;
+    } gas;
 
     /// Current Pica command list
     struct {

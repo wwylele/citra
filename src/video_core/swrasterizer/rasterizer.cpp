@@ -6,6 +6,8 @@
 #include <array>
 #include <cmath>
 #include <tuple>
+#include <video_core/pica_state.h>
+#include <video_core/regs_framebuffer.h>
 #include "common/assert.h"
 #include "common/bit_field.h"
 #include "common/color.h"
@@ -126,7 +128,7 @@ MICROPROFILE_DEFINE(GPU_Rasterization, "GPU", "Rasterization", MP_RGB(50, 50, 24
  */
 static void ProcessTriangleInternal(const Vertex& v0, const Vertex& v1, const Vertex& v2,
                                     bool reversed = false) {
-    const auto& regs = g_state.regs;
+    /*const*/ auto& regs = g_state.regs;
     MICROPROFILE_SCOPE(GPU_Rasterization);
 
     // vertex positions in rasterizer coordinates
@@ -518,6 +520,63 @@ static void ProcessTriangleInternal(const Vertex& v0, const Vertex& v1, const Ve
                     }
                 };
 
+                if (tev_stage_index == tev_stages.size() - 1 &&
+                    regs.texturing.fog_mode == TexturingRegs::FogMode::Gas) {
+                    auto C = GetSource(tev_stage.color_source1);
+                    auto D = GetSource(tev_stage.color_source3);
+                    u16 D1 = D.x | (D.y << 8);
+                    u16 D2 = D.z | (D.w << 8);
+
+                    auto& gas = regs.framebuffer.gas;
+
+                    float d1;
+                    switch (regs.texturing.gas_shading_density_src) {
+                    case TexturingRegs::GasShadingDensitySrc::PlainDensity:
+                        d1 = (float)D1 / gas.auto_acc_reset;
+                        break;
+                    case TexturingRegs::GasShadingDensitySrc::DepthDensity:
+                        d1 = (float)D2 / gas.auto_acc_reset;
+                        break;
+                    }
+
+                    if (regs.framebuffer.gas.lut_input ==
+                        FramebufferRegs::GasLutInput::LightFactor) {
+                        float igi = (1 - d1 * gas.light_xy.density_attenuation / 255) * C.x / 255;
+                        float isi = (1 - d1 * gas.light_z.density_attenuation / 255) *
+                                    gas.z_shading_effect / 255;
+                        igi = MathUtil::Clamp(igi, 0.0f, 1.0f);
+                        isi = MathUtil::Clamp(isi, 0.0f, 1.0f);
+                        d1 = Math::Lerp(gas.light_xy.min_intensity / 255.f,
+                                        gas.light_xy.max_intensity / 255.f, igi);
+                        d1 += Math::Lerp(gas.light_z.min_intensity / 255.f,
+                                         gas.light_z.max_intensity / 255.f, isi);
+                        d1 = MathUtil::Clamp(d1, 0.0f, 1.0f);
+                    }
+
+                    d1 *= 8;
+                    int rgbi = MathUtil::Clamp((int)d1, 0, 7);
+                    float rgbf = d1 - rgbi;
+                    auto rgb = (g_state.gas.color_table[rgbi].ToVector().Cast<float>() +
+                                g_state.gas.color_diff_table[rgbi].ToVector() * rgbf);
+
+                    float d2 =
+                        D2 * float16::FromRaw(regs.texturing.gas_attenuation).ToFloat32() / 255.0f;
+                    d2 = MathUtil::Clamp(d2, 0.0f, 1.0f);
+                    float fog_index = d2 * 128.0f;
+                    float fog_i = MathUtil::Clamp(floorf(fog_index), 0.0f, 127.0f);
+                    float fog_f = fog_index - fog_i;
+                    const auto& fog_lut_entry = g_state.fog.lut[static_cast<unsigned int>(fog_i)];
+                    float fog_factor =
+                        fog_lut_entry.ToFloat() + fog_lut_entry.DiffToFloat() * fog_f;
+
+                    combiner_output.x = MathUtil::Clamp(rgb.x, 0.0f, 255.0f);
+                    combiner_output.y = MathUtil::Clamp(rgb.y, 0.0f, 255.0f);
+                    combiner_output.z = MathUtil::Clamp(rgb.z, 0.0f, 255.0f);
+                    combiner_output.w = fog_factor * 255;
+
+                    break;
+                }
+
                 // color combiner
                 // NOTE: Not sure if the alpha combiner might use the color output of the previous
                 //       stage as input. Hence, we currently don't directly write the result to
@@ -580,6 +639,46 @@ static void ProcessTriangleInternal(const Vertex& v0, const Vertex& v1, const Ve
                 u8 stencil = combiner_output.y;
                 DrawShadowMapPixel(x >> 4, y >> 4, depth_int, stencil);
                 // skip the normal output merger pipeline if it is in shadow mode
+                continue;
+            }
+
+            // Convert float to integer
+            unsigned num_bits =
+                FramebufferRegs::DepthBitsPerPixel(regs.framebuffer.framebuffer.depth_format);
+            unsigned z_scale = (1 << num_bits) - 1;
+            u32 z = (u32)(depth * z_scale);
+
+            if (regs.framebuffer.output_merger.fragment_operation_mode ==
+                FramebufferRegs::FragmentOperationMode::Gas) {
+                u32 zb = GetDepth(x >> 4, y >> 4);
+                float att = MathUtil::Clamp((float)((s32)zb - (s32)z) / z_scale *
+                                                (regs.framebuffer.gas.delta_z / 256.0f),
+                                            0.0f, 1.0f);
+                auto D = GetPixel(x >> 4, y >> 4);
+                u16 D1 = D.x | (D.y << 8);
+                u16 D2 = D.z | (D.w << 8);
+                D1 += combiner_output.x;
+                switch (regs.framebuffer.gas.depth_function) {
+                case FramebufferRegs::GasDepthFunction::Never:
+                    break;
+                case FramebufferRegs::GasDepthFunction::Always:
+                    D2 += combiner_output.x;
+                    break;
+                case FramebufferRegs::GasDepthFunction::GreaterThan:
+                    D2 += combiner_output.x * (1.0 - att);
+                    break;
+                case FramebufferRegs::GasDepthFunction::LessThan:
+                    D2 += combiner_output.x * att;
+                    break;
+                }
+                if (D1 > regs.framebuffer.gas.auto_acc_reset) {
+                    regs.framebuffer.gas.auto_acc_reset.Assign(D1);
+                }
+                D.x = D1 & 0xFF;
+                D.y = D1 >> 8;
+                D.z = D2 & 0xFF;
+                D.w = D2 >> 8;
+                DrawPixel(x >> 4, y >> 4, D);
                 continue;
             }
 
@@ -714,11 +813,6 @@ static void ProcessTriangleInternal(const Vertex& v0, const Vertex& v1, const Ve
                     continue;
                 }
             }
-
-            // Convert float to integer
-            unsigned num_bits =
-                FramebufferRegs::DepthBitsPerPixel(regs.framebuffer.framebuffer.depth_format);
-            u32 z = (u32)(depth * ((1 << num_bits) - 1));
 
             if (output_merger.depth_test_enable) {
                 u32 ref_z = GetDepth(x >> 4, y >> 4);
