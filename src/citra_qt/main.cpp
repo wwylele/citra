@@ -43,6 +43,7 @@
 #include "core/gdbstub/gdbstub.h"
 #include "core/loader/loader.h"
 #include "core/settings.h"
+#include "input_common/3dscontroller.h"
 
 #ifdef QT_STATICPLUGIN
 Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin);
@@ -884,6 +885,9 @@ int main(int argc, char* argv[]) {
     // After settings have been loaded by GMainWindow, apply the filter
     log_filter.ParseFilterString(Settings::values.log_filter);
 
+    std::shared_ptr<InputCommon::Port3DSController> p3c(new InputCommon::Port3DSController);
+    p3c->StartListening(8888);
+    InputCommon::RegisterMonolithicDevice("3DSController", p3c);
     main_window.show();
     return app.exec();
 }

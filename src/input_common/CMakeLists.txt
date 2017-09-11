@@ -1,4 +1,5 @@
 set(SRCS
+            3dscontroller.cpp
             analog_from_button.cpp
             keyboard.cpp
             main.cpp
@@ -7,6 +8,7 @@ set(SRCS
             )
 
 set(HEADERS
+            3dscontroller.h
             analog_from_button.h
             keyboard.h
             main.h
