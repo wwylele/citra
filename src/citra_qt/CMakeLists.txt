@@ -96,13 +96,45 @@ else()
     qt4_wrap_ui(UI_HDRS ${UIS})
 endif()
 
+if (ENABLE_QT_TRANSLATION)
+
+    # Update source TS file if enabled
+    if (GENERATE_QT_TRANSLATION)
+        # Note: with qt5_create_translation, en.ts becomes a build artifact and will be deleted in clean process
+        qt5_create_translation(QM_FILES ${SRCS} ${HEADERS} ${UIS} ${CITRA_QT_LANGUAGES}/en.ts)
+        add_custom_target(translation ALL DEPENDS ${CITRA_QT_LANGUAGES}/en.ts)
+    endif()
+
+    # Find all TS files except en.ts
+    file(GLOB_RECURSE LANGUAGES_TS ${CITRA_QT_LANGUAGES}/*.ts)
+    list(REMOVE_ITEM LANGUAGES_TS ${CITRA_QT_LANGUAGES}/en.ts)
+
+    # Compile TS files to QM files
+    qt5_add_translation(LANGUAGES_QM ${LANGUAGES_TS})
+
+    # Build a QRC file from the QM file list
+    SET(LANGUAGES_QRC ${CMAKE_CURRENT_BINARY_DIR}/languages.qrc)
+    FILE(WRITE ${LANGUAGES_QRC} "<RCC><qresource prefix=\"languages\">\n")
+    foreach (QM ${LANGUAGES_QM})
+        get_filename_component(QM_FILE ${QM} NAME)
+        FILE(APPEND ${LANGUAGES_QRC} "<file>${QM_FILE}</file>\n")
+    endforeach (QM)
+    FILE(APPEND ${LANGUAGES_QRC} "</qresource></RCC>")
+
+    # Add the QRC file to package in all QM files
+    qt5_add_resources(LANGUAGES ${LANGUAGES_QRC})
+else()
+    set(LANGUAGES)
+endif()
+
+
 if (APPLE)
     set(MACOSX_ICON "../../dist/citra.icns")
     set_source_files_properties(${MACOSX_ICON} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
-    add_executable(citra-qt MACOSX_BUNDLE ${SRCS} ${HEADERS} ${UI_HDRS} ${ICONS} ${THEMES} ${MACOSX_ICON})
+    add_executable(citra-qt MACOSX_BUNDLE ${SRCS} ${HEADERS} ${UI_HDRS} ${ICONS} ${THEMES} ${MACOSX_ICON} ${LANGUAGES})
     set_target_properties(citra-qt PROPERTIES MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist)
 else()
-    add_executable(citra-qt ${SRCS} ${HEADERS} ${UI_HDRS} ${ICONS} ${THEMES})
+    add_executable(citra-qt ${SRCS} ${HEADERS} ${UI_HDRS} ${ICONS} ${THEMES} ${LANGUAGES})
 endif()
 target_link_libraries(citra-qt PRIVATE audio_core common core input_common network video_core)
 target_link_libraries(citra-qt PRIVATE Boost::boost glad nihstro-headers Qt5::OpenGL Qt5::Widgets)
