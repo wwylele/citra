@@ -45,7 +45,7 @@
      <x>0</x>
      <y>0</y>
      <width>1081</width>
-     <height>21</height>
+     <height>25</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">
@@ -57,11 +57,17 @@
       <string>Recent Files</string>
      </property>
     </widget>
+    <widget class="QMenu" name="menu_Language">
+     <property name="title">
+      <string>Language</string>
+     </property>
+    </widget>
     <addaction name="action_Load_File"/>
     <addaction name="action_Install_CIA"/>
     <addaction name="separator"/>
     <addaction name="action_Select_Game_List_Root"/>
     <addaction name="menu_recent_files"/>
+    <addaction name="menu_Language"/>
     <addaction name="separator"/>
     <addaction name="action_Exit"/>
    </widget>
@@ -235,4 +241,5 @@
   </action>
  </widget>
  <resources/>
+ <connections/>
 </ui>

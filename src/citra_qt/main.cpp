@@ -9,6 +9,7 @@
 #include <glad/glad.h>
 #define QT_NO_OPENGL
 #include <QDesktopWidget>
+#include <QDirIterator>
 #include <QFileDialog>
 #include <QFutureWatcher>
 #include <QMessageBox>
@@ -97,6 +98,8 @@ GMainWindow::GMainWindow() : config(new Config()), emu_thread(nullptr) {
     // register size_t to use in slots and signals
     qRegisterMetaType<size_t>("size_t");
 
+    LoadTranslation();
+
     Pica::g_debug_context = Pica::DebugContext::Construct();
     setAcceptDrops(true);
     ui.setupUi(this);
@@ -106,6 +109,7 @@ GMainWindow::GMainWindow() : config(new Config()), emu_thread(nullptr) {
     InitializeDebugWidgets();
     InitializeRecentFileMenuActions();
     InitializeHotkeys();
+    InitializeLanguagesMenu();
     ShowUpdaterWidgets();
 
     SetDefaultUIGeometry();
@@ -114,8 +118,8 @@ GMainWindow::GMainWindow() : config(new Config()), emu_thread(nullptr) {
     ConnectMenuEvents();
     ConnectWidgetEvents();
 
-    setWindowTitle(QString("Citra %1| %2-%3")
-                       .arg(Common::g_build_name, Common::g_scm_branch, Common::g_scm_desc));
+    SetupUIStrings();
+
     show();
 
     game_list->PopulateAsync(UISettings::values.gamedir, UISettings::values.gamedir_deepscan);
@@ -285,6 +289,36 @@ void GMainWindow::InitializeHotkeys() {
             ToggleFullscreen();
         }
     });
+}
+
+void GMainWindow::InitializeLanguagesMenu() {
+    QActionGroup* lang_group = new QActionGroup(ui.menu_Language);
+    lang_group->setExclusive(true);
+    connect(lang_group, &QActionGroup::triggered, this, &GMainWindow::OnLanguageChanged);
+
+    QAction* action = new QAction(tr("English"), this);
+    action->setData(QString(""));
+    action->setCheckable(true);
+    ui.menu_Language->addAction(action);
+    lang_group->addAction(action);
+    if (UISettings::values.translation_file.isEmpty())
+        action->setChecked(true);
+
+    QDirIterator it(":/languages", QDirIterator::NoIteratorFlags);
+    while (it.hasNext()) {
+        QString locale = it.next();
+        QAction* action = new QAction(this);
+        locale.truncate(locale.lastIndexOf('.'));
+        locale.remove(0, locale.lastIndexOf('/') + 1);
+        QString lang = QLocale::languageToString(QLocale(locale).language());
+        action->setText(lang);
+        action->setData(locale);
+        action->setCheckable(true);
+        ui.menu_Language->addAction(action);
+        lang_group->addAction(action);
+        if (UISettings::values.translation_file == locale)
+            action->setChecked(true);
+    }
 }
 
 void GMainWindow::ShowUpdaterWidgets() {
@@ -1082,6 +1116,37 @@ void GMainWindow::UpdateUITheme() {
         qApp->setStyleSheet("");
         GMainWindow::setStyleSheet("");
     }
+}
+
+void GMainWindow::LoadTranslation() {
+    if (!UISettings::values.translation_file.isEmpty()) {
+        if (translator.load(UISettings::values.translation_file, ":/languages/")) {
+            qApp->installTranslator(&translator);
+        } else {
+            QMessageBox::critical(
+                this, "Failed to load translation",
+                "Citra cannot load the translation file. The language is reset to English.");
+            UISettings::values.translation_file.clear();
+        }
+    }
+}
+
+void GMainWindow::OnLanguageChanged(QAction* action) {
+    if (action != nullptr) {
+        if (!UISettings::values.translation_file.isEmpty()) {
+            qApp->removeTranslator(&translator);
+        }
+
+        UISettings::values.translation_file = action->data().toString();
+        LoadTranslation();
+        ui.retranslateUi(this);
+        SetupUIStrings();
+    }
+}
+
+void GMainWindow::SetupUIStrings() {
+    setWindowTitle(QString("Citra %1| %2-%3")
+                       .arg(Common::g_build_name, Common::g_scm_branch, Common::g_scm_desc));
 }
 
 #ifdef main
