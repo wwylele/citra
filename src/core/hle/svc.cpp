@@ -271,6 +271,24 @@ static ResultCode WaitSynchronization1(Kernel::Handle handle, s64 nano_seconds) 
         // Create an event to wake the thread up after the specified nanosecond delay has passed
         thread->WakeAfterDelay(nano_seconds);
 
+        thread->wakeup_callback = [](ThreadWakeupReason reason,
+                                     Kernel::SharedPtr<Kernel::Thread> thread,
+                                     Kernel::SharedPtr<Kernel::WaitObject> object) {
+
+            ASSERT(thread->status == THREADSTATUS_WAIT_SYNCH_ANY);
+
+            if (reason == ThreadWakeupReason::Timeout) {
+                thread->SetWaitSynchronizationResult(Kernel::RESULT_TIMEOUT);
+                return;
+            }
+
+            ASSERT(reason == ThreadWakeupReason::Signal);
+            thread->SetWaitSynchronizationResult(RESULT_SUCCESS);
+
+            // WaitSynchronization1 doesn't have an output index like WaitSynchronizationN, so we
+            // don't have to do anything else here.
+        };
+
         Core::System::GetInstance().PrepareReschedule();
 
         // Note: The output of this SVC will be set to RESULT_SUCCESS if the thread
@@ -344,6 +362,23 @@ static ResultCode WaitSynchronizationN(s32* out, Kernel::Handle* handles, s32 ha
         // Create an event to wake the thread up after the specified nanosecond delay has passed
         thread->WakeAfterDelay(nano_seconds);
 
+        thread->wakeup_callback = [](ThreadWakeupReason reason,
+                                     Kernel::SharedPtr<Kernel::Thread> thread,
+                                     Kernel::SharedPtr<Kernel::WaitObject> object) {
+
+            ASSERT(thread->status == THREADSTATUS_WAIT_SYNCH_ALL);
+
+            if (reason == ThreadWakeupReason::Timeout) {
+                thread->SetWaitSynchronizationResult(Kernel::RESULT_TIMEOUT);
+                return;
+            }
+
+            ASSERT(reason == ThreadWakeupReason::Signal);
+
+            thread->SetWaitSynchronizationResult(RESULT_SUCCESS);
+            // The wait_all case does not update the output index.
+        };
+
         Core::System::GetInstance().PrepareReschedule();
 
         // This value gets set to -1 by default in this case, it is not modified after this.
@@ -361,7 +396,7 @@ static ResultCode WaitSynchronizationN(s32* out, Kernel::Handle* handles, s32 ha
             // We found a ready object, acquire it and set the result value
             Kernel::WaitObject* object = itr->get();
             object->Acquire(thread);
-            *out = std::distance(objects.begin(), itr);
+            *out = static_cast<s32>(std::distance(objects.begin(), itr));
             return RESULT_SUCCESS;
         }
 
@@ -389,12 +424,28 @@ static ResultCode WaitSynchronizationN(s32* out, Kernel::Handle* handles, s32 ha
         // Create an event to wake the thread up after the specified nanosecond delay has passed
         thread->WakeAfterDelay(nano_seconds);
 
+        thread->wakeup_callback = [](ThreadWakeupReason reason,
+                                     Kernel::SharedPtr<Kernel::Thread> thread,
+                                     Kernel::SharedPtr<Kernel::WaitObject> object) {
+
+            ASSERT(thread->status == THREADSTATUS_WAIT_SYNCH_ANY);
+
+            if (reason == ThreadWakeupReason::Timeout) {
+                thread->SetWaitSynchronizationResult(Kernel::RESULT_TIMEOUT);
+                return;
+            }
+
+            ASSERT(reason == ThreadWakeupReason::Signal);
+
+            thread->SetWaitSynchronizationResult(RESULT_SUCCESS);
+            thread->SetWaitSynchronizationOutput(thread->GetWaitObjectIndex(object.get()));
+        };
+
         Core::System::GetInstance().PrepareReschedule();
 
         // Note: The output of this SVC will be set to RESULT_SUCCESS if the thread resumes due to a
         // signal in one of its wait objects.
         // Otherwise we retain the default value of timeout, and -1 in the out parameter
-        thread->wait_set_output = true;
         *out = -1;
         return Kernel::RESULT_TIMEOUT;
     }
@@ -469,7 +520,7 @@ static ResultCode ReplyAndReceive(s32* index, Kernel::Handle* handles, s32 handl
         // We found a ready object, acquire it and set the result value
         Kernel::WaitObject* object = itr->get();
         object->Acquire(thread);
-        *index = std::distance(objects.begin(), itr);
+        *index = static_cast<s32>(std::distance(objects.begin(), itr));
 
         if (object->GetHandleType() == Kernel::HandleType::ServerSession) {
             auto server_session = static_cast<Kernel::ServerSession*>(object);
@@ -483,8 +534,6 @@ static ResultCode ReplyAndReceive(s32* index, Kernel::Handle* handles, s32 handl
 
     // No objects were ready to be acquired, prepare to suspend the thread.
 
-    // TODO(Subv): Perform IPC translation upon wakeup.
-
     // Put the thread to sleep
     thread->status = THREADSTATUS_WAIT_SYNCH_ANY;
 
@@ -496,12 +545,24 @@ static ResultCode ReplyAndReceive(s32* index, Kernel::Handle* handles, s32 handl
 
     thread->wait_objects = std::move(objects);
 
+    thread->wakeup_callback = [](ThreadWakeupReason reason,
+                                 Kernel::SharedPtr<Kernel::Thread> thread,
+                                 Kernel::SharedPtr<Kernel::WaitObject> object) {
+
+        ASSERT(thread->status == THREADSTATUS_WAIT_SYNCH_ANY);
+        ASSERT(reason == ThreadWakeupReason::Signal);
+
+        thread->SetWaitSynchronizationResult(RESULT_SUCCESS);
+        thread->SetWaitSynchronizationOutput(thread->GetWaitObjectIndex(object.get()));
+
+        // TODO(Subv): Perform IPC translation upon wakeup.
+    };
+
     Core::System::GetInstance().PrepareReschedule();
 
     // Note: The output of this SVC will be set to RESULT_SUCCESS if the thread resumes due to a
     // signal in one of its wait objects, or to 0xC8A01836 if there was a translation error.
     // By default the index is set to -1.
-    thread->wait_set_output = true;
     *index = -1;
     return RESULT_SUCCESS;
 }
@@ -656,8 +717,9 @@ static ResultCode CreateThread(Kernel::Handle* out_handle, u32 priority, u32 ent
                   "Newly created thread must run in the SysCore (Core1), unimplemented.");
     }
 
-    CASCADE_RESULT(SharedPtr<Thread> thread, Kernel::Thread::Create(name, entry_point, priority,
-                                                                    arg, processor_id, stack_top));
+    CASCADE_RESULT(SharedPtr<Thread> thread,
+                   Kernel::Thread::Create(name, entry_point, priority, arg, processor_id, stack_top,
+                                          Kernel::g_current_process));
 
     thread->context.fpscr =
         FPSCR_DEFAULT_NAN | FPSCR_FLUSH_TO_ZERO | FPSCR_ROUND_TOZERO; // 0x03C00000
@@ -682,7 +744,7 @@ static void ExitThread() {
 }
 
 /// Gets the priority for the specified thread
-static ResultCode GetThreadPriority(s32* priority, Kernel::Handle handle) {
+static ResultCode GetThreadPriority(u32* priority, Kernel::Handle handle) {
     const SharedPtr<Kernel::Thread> thread = Kernel::g_handle_table.Get<Kernel::Thread>(handle);
     if (thread == nullptr)
         return ERR_INVALID_HANDLE;
@@ -692,7 +754,7 @@ static ResultCode GetThreadPriority(s32* priority, Kernel::Handle handle) {
 }
 
 /// Sets the priority for the specified thread
-static ResultCode SetThreadPriority(Kernel::Handle handle, s32 priority) {
+static ResultCode SetThreadPriority(Kernel::Handle handle, u32 priority) {
     if (priority > THREADPRIO_LOWEST) {
         return Kernel::ERR_OUT_OF_RANGE;
     }
@@ -977,7 +1039,7 @@ static void SleepThread(s64 nanoseconds) {
 static s64 GetSystemTick() {
     s64 result = CoreTiming::GetTicks();
     // Advance time to defeat dumb games (like Cubic Ninja) that busy-wait for the frame to end.
-    Core::CPU().AddTicks(150); // Measured time between two calls on a 9.2 o3DS with Ninjhax 1.1b
+    CoreTiming::AddTicks(150); // Measured time between two calls on a 9.2 o3DS with Ninjhax 1.1b
     return result;
 }
 

@@ -12,6 +12,10 @@
 #include "common/common_types.h"
 #include "core/mmio.h"
 
+namespace Kernel {
+class Process;
+}
+
 namespace Memory {
 
 /**
@@ -185,7 +189,10 @@ enum : VAddr {
 void SetCurrentPageTable(PageTable* page_table);
 PageTable* GetCurrentPageTable();
 
+/// Determines if the given VAddr is valid for the specified process.
+bool IsValidVirtualAddress(const Kernel::Process& process, const VAddr vaddr);
 bool IsValidVirtualAddress(const VAddr addr);
+
 bool IsValidPhysicalAddress(const PAddr addr);
 
 u8 Read8(VAddr addr);
@@ -198,7 +205,11 @@ void Write16(VAddr addr, u16 data);
 void Write32(VAddr addr, u32 data);
 void Write64(VAddr addr, u64 data);
 
+void ReadBlock(const Kernel::Process& process, const VAddr src_addr, void* dest_buffer,
+               size_t size);
 void ReadBlock(const VAddr src_addr, void* dest_buffer, size_t size);
+void WriteBlock(const Kernel::Process& process, const VAddr dest_addr, const void* src_buffer,
+                size_t size);
 void WriteBlock(const VAddr dest_addr, const void* src_buffer, size_t size);
 void ZeroBlock(const VAddr dest_addr, const size_t size);
 void CopyBlock(VAddr dest_addr, VAddr src_addr, size_t size);
