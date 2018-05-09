@@ -110,6 +110,9 @@ struct PicaFSConfigState {
         u32 lut_offset;
         Pica::TexturingRegs::ProcTexFilter lut_filter;
     } proctex;
+
+    bool shadow_texture_orthographic;
+    float shadow_texture_bias;
 };
 
 /**

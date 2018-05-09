@@ -219,6 +219,9 @@ PicaFSConfig PicaFSConfig::BuildFromRegs(const Pica::Regs& regs) {
         state.proctex.lut_filter = regs.texturing.proctex_lut.filter;
     }
 
+    state.shadow_texture_orthographic = regs.texturing.shadow.orthographic != 0;
+    state.shadow_texture_bias = (regs.texturing.shadow.bias << 1) / 16777215.0f; // 2^24 - 1
+
     return res;
 }
 
@@ -299,6 +302,7 @@ static std::string SampleTexture(const PicaFSConfig& config, unsigned texture_un
         case TexturingRegs::TextureConfig::TextureCube:
             return "texture(tex_cube, vec3(texcoord0, texcoord0_w))";
         case TexturingRegs::TextureConfig::Shadow2D:
+            return "shadowTexture(texcoord0, texcoord0_w)";
         case TexturingRegs::TextureConfig::ShadowCube:
             NGLOG_CRITICAL(HW_GPU, "Unhandled shadow texture");
             UNIMPLEMENTED();
@@ -1196,6 +1200,7 @@ uniform sampler2D tex0;
 uniform sampler2D tex1;
 uniform sampler2D tex2;
 uniform samplerCube tex_cube;
+uniform sampler2DShadow tex_shadow;
 uniform samplerBuffer lighting_lut;
 uniform samplerBuffer fog_lut;
 uniform samplerBuffer proctex_noise_lut;
@@ -1248,6 +1253,14 @@ vec4 byteround(vec4 x) {
 }
 
 )";
+
+    out += "vec4 shadowTexture(vec2 uv, float w) {\n";
+    out += "    float z = min(abs(w), 1.0) - " + std::to_string(state.shadow_texture_bias) + ";\n";
+    if (state.shadow_texture_orthographic) {
+        out += "    return vec4(texture(tex_shadow, vec3(uv, z)));\n}\n";
+    } else {
+        out += "    return vec4(texture(tex_shadow, vec3(uv / w, z)));\n}\n";
+    }
 
     if (config.state.proctex.enable)
         AppendProcTexSampler(out, config);
