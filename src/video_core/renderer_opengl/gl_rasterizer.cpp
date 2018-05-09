@@ -47,6 +47,10 @@ RasterizerOpenGL::RasterizerOpenGL()
         state.texture_units[i].sampler = texture_samplers[i].sampler.handle;
     }
 
+    // Create shadow map texture and sampler objects
+    texture_shadow_sampler.Create();
+    state.texture_shadow_unit.sampler = texture_shadow_sampler.sampler.handle;
+
     // Create cubemap texture and sampler objects
     texture_cube_sampler.Create();
     state.texture_cube_unit.sampler = texture_cube_sampler.sampler.handle;
@@ -675,6 +679,16 @@ bool RasterizerOpenGL::Draw(bool accelerate, bool is_indexed) {
                     texture_cube_sampler.SyncWithConfig(texture.config);
                     state.texture_units[texture_index].texture_2d = 0;
                     continue; // Texture unit 0 setup finished. Continue to next unit
+                case TextureType::Shadow2D:
+                    texture_shadow_sampler.SyncWithConfig(texture.config);
+                    state.texture_units[texture_index].texture_2d = 0;
+                    Surface surface = res_cache.GetTextureSurface(texture);
+                    if (surface != nullptr) {
+                        state.texture_shadow_unit.texture_2d = surface->texture.handle;
+                    } else {
+                        state.texture_shadow_unit.texture_2d = 0;
+                    }
+                    continue;
                 }
             }
 
@@ -848,9 +862,13 @@ void RasterizerOpenGL::NotifyPicaRegisterChanged(u32 id) {
         shader_dirty = true;
         break;
 
-    // Blending
-    case PICA_REG_INDEX(framebuffer.output_merger.alphablend_enable):
+    // Blending and fragment mode
+    case PICA_REG_INDEX(framebuffer.output_merger.fragment_operation_mode):
         SyncBlendEnabled();
+        SyncStencilWriteMask();
+        SyncDepthWriteMask();
+        SyncStencilTest();
+        SyncDepthTest();
         break;
     case PICA_REG_INDEX(framebuffer.output_merger.alpha_blending):
         SyncBlendFuncs();
@@ -1508,6 +1526,12 @@ void RasterizerOpenGL::SamplerInfo::Create() {
     // Other attributes have correct defaults
 }
 
+void RasterizerOpenGL::ShadowSamplerInfo::Create() {
+    SamplerInfo::Create();
+    glSamplerParameteri(sampler.handle, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+    glSamplerParameteri(sampler.handle, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+}
+
 void RasterizerOpenGL::SamplerInfo::SyncWithConfig(
     const Pica::TexturingRegs::TextureConfig& config) {
 
@@ -1769,6 +1793,11 @@ void RasterizerOpenGL::SyncColorWriteMask() {
 
 void RasterizerOpenGL::SyncStencilWriteMask() {
     const auto& regs = Pica::g_state.regs;
+    if (regs.framebuffer.output_merger.fragment_operation_mode ==
+        Pica::FramebufferRegs::FragmentOperationMode::Shadow) {
+        state.stencil.write_mask = 0;
+        return;
+    }
     state.stencil.write_mask =
         (regs.framebuffer.framebuffer.allow_depth_stencil_write != 0)
             ? static_cast<GLuint>(regs.framebuffer.output_merger.stencil_test.write_mask)
@@ -1777,6 +1806,11 @@ void RasterizerOpenGL::SyncStencilWriteMask() {
 
 void RasterizerOpenGL::SyncDepthWriteMask() {
     const auto& regs = Pica::g_state.regs;
+    if (regs.framebuffer.output_merger.fragment_operation_mode ==
+        Pica::FramebufferRegs::FragmentOperationMode::Shadow) {
+        state.depth.write_mask = GL_TRUE;
+        return;
+    }
     state.depth.write_mask = (regs.framebuffer.framebuffer.allow_depth_stencil_write != 0 &&
                               regs.framebuffer.output_merger.depth_write_enable)
                                  ? GL_TRUE
@@ -1785,6 +1819,11 @@ void RasterizerOpenGL::SyncDepthWriteMask() {
 
 void RasterizerOpenGL::SyncStencilTest() {
     const auto& regs = Pica::g_state.regs;
+    if (regs.framebuffer.output_merger.fragment_operation_mode ==
+        Pica::FramebufferRegs::FragmentOperationMode::Shadow) {
+        state.stencil.test_enabled = GL_FALSE;
+        return;
+    }
     state.stencil.test_enabled =
         regs.framebuffer.output_merger.stencil_test.enable &&
         regs.framebuffer.framebuffer.depth_format == Pica::FramebufferRegs::DepthFormat::D24S8;
@@ -1802,6 +1841,12 @@ void RasterizerOpenGL::SyncStencilTest() {
 
 void RasterizerOpenGL::SyncDepthTest() {
     const auto& regs = Pica::g_state.regs;
+    if (regs.framebuffer.output_merger.fragment_operation_mode ==
+        Pica::FramebufferRegs::FragmentOperationMode::Shadow) {
+        state.depth.test_enabled = GL_TRUE;
+        state.depth.test_func = GL_LESS; // this is hard-coded for shadow map rendering
+        return;
+    }
     state.depth.test_enabled = regs.framebuffer.output_merger.depth_test_enable == 1 ||
                                regs.framebuffer.output_merger.depth_write_enable == 1;
     state.depth.test_func =

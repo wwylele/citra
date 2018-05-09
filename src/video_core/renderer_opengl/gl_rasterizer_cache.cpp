@@ -56,6 +56,8 @@ static constexpr std::array<FormatTuple, 4> depth_format_tuples = {{
 }};
 
 static constexpr FormatTuple tex_tuple = {GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE};
+static constexpr FormatTuple shadow_tuple = {GL_DEPTH24_STENCIL8, GL_DEPTH_STENCIL,
+                                             GL_UNSIGNED_INT_24_8};
 
 static const FormatTuple& GetFormatTuple(PixelFormat pixel_format) {
     const SurfaceType type = SurfaceParams::GetFormatType(pixel_format);
@@ -66,6 +68,8 @@ static const FormatTuple& GetFormatTuple(PixelFormat pixel_format) {
         size_t tuple_idx = static_cast<size_t>(pixel_format) - 14;
         ASSERT(tuple_idx < depth_format_tuples.size());
         return depth_format_tuples[tuple_idx];
+    } else if (type == SurfaceType::Shadow) {
+        return shadow_tuple;
     }
     return tex_tuple;
 }
@@ -93,12 +97,23 @@ static void MortonCopyTile(u32 stride, u8* tile_buffer, u8* gl_buffer) {
                 if (format == PixelFormat::D24S8) {
                     gl_ptr[0] = tile_ptr[3];
                     std::memcpy(gl_ptr + 1, tile_ptr, 3);
+                } else if (format == PixelFormat::Shadow) {
+                    // Unlike D24S8, the depth component of shadow map is stored in big-endian
+                    gl_ptr[0] = tile_ptr[3];
+                    gl_ptr[1] = tile_ptr[2];
+                    gl_ptr[2] = tile_ptr[1];
+                    gl_ptr[3] = tile_ptr[0];
                 } else {
                     std::memcpy(gl_ptr, tile_ptr, bytes_per_pixel);
                 }
             } else {
                 if (format == PixelFormat::D24S8) {
                     std::memcpy(tile_ptr, gl_ptr + 1, 3);
+                    tile_ptr[3] = gl_ptr[0];
+                } else if (format == PixelFormat::Shadow) {
+                    tile_ptr[0] = gl_ptr[3];
+                    tile_ptr[1] = gl_ptr[2];
+                    tile_ptr[2] = gl_ptr[1];
                     tile_ptr[3] = gl_ptr[0];
                 } else {
                     std::memcpy(tile_ptr, gl_ptr, bytes_per_pixel);
@@ -164,7 +179,7 @@ static void MortonCopy(u32 stride, u32 height, u8* gl_buffer, PAddr base, PAddr 
     }
 }
 
-static constexpr std::array<void (*)(u32, u32, u8*, PAddr, PAddr, PAddr), 18> morton_to_gl_fns = {
+static constexpr std::array<void (*)(u32, u32, u8*, PAddr, PAddr, PAddr), 19> morton_to_gl_fns = {
     MortonCopy<true, PixelFormat::RGBA8>,  // 0
     MortonCopy<true, PixelFormat::RGB8>,   // 1
     MortonCopy<true, PixelFormat::RGB5A1>, // 2
@@ -178,14 +193,15 @@ static constexpr std::array<void (*)(u32, u32, u8*, PAddr, PAddr, PAddr), 18> mo
     nullptr,
     nullptr,
     nullptr,
-    nullptr,                             // 5 - 13
-    MortonCopy<true, PixelFormat::D16>,  // 14
-    nullptr,                             // 15
-    MortonCopy<true, PixelFormat::D24>,  // 16
-    MortonCopy<true, PixelFormat::D24S8> // 17
+    nullptr,                               // 5 - 13
+    MortonCopy<true, PixelFormat::D16>,    // 14
+    nullptr,                               // 15
+    MortonCopy<true, PixelFormat::D24>,    // 16
+    MortonCopy<true, PixelFormat::D24S8>,  // 17
+    MortonCopy<true, PixelFormat::Shadow>, // 18
 };
 
-static constexpr std::array<void (*)(u32, u32, u8*, PAddr, PAddr, PAddr), 18> gl_to_morton_fns = {
+static constexpr std::array<void (*)(u32, u32, u8*, PAddr, PAddr, PAddr), 19> gl_to_morton_fns = {
     MortonCopy<false, PixelFormat::RGBA8>,  // 0
     MortonCopy<false, PixelFormat::RGB8>,   // 1
     MortonCopy<false, PixelFormat::RGB5A1>, // 2
@@ -199,11 +215,12 @@ static constexpr std::array<void (*)(u32, u32, u8*, PAddr, PAddr, PAddr), 18> gl
     nullptr,
     nullptr,
     nullptr,
-    nullptr,                              // 5 - 13
-    MortonCopy<false, PixelFormat::D16>,  // 14
-    nullptr,                              // 15
-    MortonCopy<false, PixelFormat::D24>,  // 16
-    MortonCopy<false, PixelFormat::D24S8> // 17
+    nullptr,                                // 5 - 13
+    MortonCopy<false, PixelFormat::D16>,    // 14
+    nullptr,                                // 15
+    MortonCopy<false, PixelFormat::D24>,    // 16
+    MortonCopy<false, PixelFormat::D24S8>,  // 17
+    MortonCopy<false, PixelFormat::Shadow>, // 18
 };
 
 // Allocate an uninitialized texture of appropriate size and format for the surface
@@ -297,7 +314,7 @@ static bool BlitTextures(GLuint src_tex, const MathUtil::Rectangle<u32>& src_rec
         glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
 
         buffers = GL_DEPTH_BUFFER_BIT;
-    } else if (type == SurfaceType::DepthStencil) {
+    } else if (type == SurfaceType::DepthStencil || type == SurfaceType::Shadow) {
         glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
         glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D,
                                src_tex, 0);
@@ -373,16 +390,19 @@ static bool FillSurface(const Surface& surface, const u8* fill_data,
         state.depth.write_mask = GL_TRUE;
         state.Apply();
         glClearBufferfv(GL_DEPTH, 0, &value_float);
-    } else if (surface->type == SurfaceType::DepthStencil) {
+    } else if (surface->type == SurfaceType::DepthStencil || surface->type == SurfaceType::Shadow) {
         glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
         glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D,
                                surface->texture.handle, 0);
 
-        u32 value_32bit;
-        std::memcpy(&value_32bit, fill_data, sizeof(u32));
-
-        GLfloat value_float = (value_32bit & 0xFFFFFF) / 16777215.0f; // 2^24 - 1
-        GLint value_int = (value_32bit >> 24);
+        u32 depth;
+        if (surface->type == SurfaceType::DepthStencil) {
+            depth = (fill_data[2] << 16) | (fill_data[1] << 8) | fill_data[0];
+        } else { // SurfaceType::Shadow
+            depth = (fill_data[0] << 16) | (fill_data[1] << 8) | fill_data[2];
+        }
+        GLint value_int = fill_data[3];
+        GLfloat value_float = depth / 16777215.0f; // 2^24 - 1
 
         state.depth.write_mask = GL_TRUE;
         state.stencil.write_mask = -1;
@@ -850,7 +870,7 @@ void CachedSurface::DownloadGLTexture(const MathUtil::Rectangle<u32>& rect, GLui
             glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D,
                                    texture.handle, 0);
             glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
-        } else {
+        } else { // SurfaceType::DepthStencil || SurfaceType::Shadow
             glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
             glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D,
                                    texture.handle, 0);
@@ -1223,16 +1243,23 @@ Surface RasterizerCacheOpenGL::GetTextureSurface(
     const Pica::TexturingRegs::FullTextureConfig& config) {
     Pica::Texture::TextureInfo info =
         Pica::Texture::TextureInfo::FromPicaRegister(config.config, config.format);
-    return GetTextureSurface(info);
+    using TextureType = Pica::TexturingRegs::TextureConfig::TextureType;
+    bool shadow = config.config.type == TextureType::Shadow2D ||
+                  config.config.type == TextureType::ShadowCube;
+    return GetTextureSurface(info, shadow);
 }
 
-Surface RasterizerCacheOpenGL::GetTextureSurface(const Pica::Texture::TextureInfo& info) {
+Surface RasterizerCacheOpenGL::GetTextureSurface(const Pica::Texture::TextureInfo& info,
+                                                 bool shadow) {
     SurfaceParams params;
     params.addr = info.physical_address;
     params.width = info.width;
     params.height = info.height;
     params.is_tiled = true;
-    params.pixel_format = SurfaceParams::PixelFormatFromTextureFormat(info.format);
+    if (shadow)
+        params.pixel_format = PixelFormat::Shadow;
+    else
+        params.pixel_format = SurfaceParams::PixelFormatFromTextureFormat(info.format);
     params.UpdateParams();
 
     if (info.width % 8 != 0 || info.height % 8 != 0) {
@@ -1375,14 +1402,22 @@ SurfaceSurfaceRect_Tuple RasterizerCacheOpenGL::GetFramebufferSurfaces(
     color_params.res_scale = resolution_scale_factor;
     color_params.width = config.GetWidth();
     color_params.height = config.GetHeight();
-    SurfaceParams depth_params = color_params;
 
     color_params.addr = config.GetColorBufferPhysicalAddress();
     color_params.pixel_format = SurfaceParams::PixelFormatFromColorFormat(config.color_format);
-    color_params.UpdateParams();
 
-    depth_params.addr = config.GetDepthBufferPhysicalAddress();
-    depth_params.pixel_format = SurfaceParams::PixelFormatFromDepthFormat(config.depth_format);
+    SurfaceParams depth_params = color_params;
+    if (regs.framebuffer.output_merger.fragment_operation_mode ==
+        Pica::FramebufferRegs::FragmentOperationMode::Shadow) {
+        // In shadow map rendering mode, the color buffer is actually used as the depth buffer
+        using_depth_fb = std::exchange(using_color_fb, false);
+        depth_params.pixel_format = PixelFormat::Shadow;
+    } else {
+        depth_params.addr = config.GetDepthBufferPhysicalAddress();
+        depth_params.pixel_format = SurfaceParams::PixelFormatFromDepthFormat(config.depth_format);
+    }
+
+    color_params.UpdateParams();
     depth_params.UpdateParams();
 
     auto color_vp_interval = color_params.GetSubRectInterval(viewport_clamped);

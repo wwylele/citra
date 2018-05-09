@@ -72,6 +72,10 @@ private:
         u32 border_color;
     };
 
+    struct ShadowSamplerInfo : public SamplerInfo {
+        void Create();
+    };
+
     /// Structure that the hardware rendered vertices are composed of
     struct HardwareVertex {
         HardwareVertex() = default;
@@ -287,6 +291,7 @@ private:
     size_t uniform_size_aligned_fs;
 
     SamplerInfo texture_cube_sampler;
+    ShadowSamplerInfo texture_shadow_sampler;
 
     OGLBuffer lighting_lut_buffer;
     OGLTexture lighting_lut;
