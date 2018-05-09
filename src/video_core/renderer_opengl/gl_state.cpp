@@ -55,6 +55,9 @@ OpenGLState::OpenGLState() {
     texture_cube_unit.texture_cube = 0;
     texture_cube_unit.sampler = 0;
 
+    texture_shadow_unit.texture_2d = 0;
+    texture_shadow_unit.sampler = 0;
+
     lighting_lut.texture_buffer = 0;
 
     fog_lut.texture_buffer = 0;
@@ -213,6 +216,14 @@ void OpenGLState::Apply() const {
         glBindSampler(TextureUnits::TextureCube.id, texture_cube_unit.sampler);
     }
 
+    if (texture_shadow_unit.texture_2d != cur_state.texture_shadow_unit.texture_2d) {
+        glActiveTexture(TextureUnits::TextureShadow.Enum());
+        glBindTexture(GL_TEXTURE_2D, texture_shadow_unit.texture_2d);
+    }
+    if (texture_shadow_unit.sampler != cur_state.texture_shadow_unit.sampler) {
+        glBindSampler(TextureUnits::TextureShadow.id, texture_shadow_unit.sampler);
+    }
+
     // Lighting LUTs
     if (lighting_lut.texture_buffer != cur_state.lighting_lut.texture_buffer) {
         glActiveTexture(TextureUnits::LightingLUT.Enum());
@@ -330,6 +341,8 @@ OpenGLState& OpenGLState::ResetTexture(GLuint handle) {
     }
     if (texture_cube_unit.texture_cube == handle)
         texture_cube_unit.texture_cube = 0;
+    if (texture_shadow_unit.texture_2d == handle)
+        texture_shadow_unit.texture_2d = 0;
     if (lighting_lut.texture_buffer == handle)
         lighting_lut.texture_buffer = 0;
     if (fog_lut.texture_buffer == handle)
@@ -355,6 +368,9 @@ OpenGLState& OpenGLState::ResetSampler(GLuint handle) {
     }
     if (texture_cube_unit.sampler == handle) {
         texture_cube_unit.sampler = 0;
+    }
+    if (texture_shadow_unit.sampler == handle) {
+        texture_shadow_unit.sampler = 0;
     }
     return *this;
 }
