@@ -58,6 +58,7 @@ static constexpr std::array<FormatTuple, 4> depth_format_tuples = {{
 static constexpr FormatTuple tex_tuple = {GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE};
 static constexpr FormatTuple shadow_tuple = {GL_DEPTH24_STENCIL8, GL_DEPTH_STENCIL,
                                              GL_UNSIGNED_INT_24_8};
+static constexpr FormatTuple gas_tuple = {GL_RG16, GL_RG, GL_UNSIGNED_SHORT};
 
 static const FormatTuple& GetFormatTuple(PixelFormat pixel_format) {
     const SurfaceType type = SurfaceParams::GetFormatType(pixel_format);
@@ -70,6 +71,8 @@ static const FormatTuple& GetFormatTuple(PixelFormat pixel_format) {
         return depth_format_tuples[tuple_idx];
     } else if (type == SurfaceType::Shadow) {
         return shadow_tuple;
+    } else if (type == SurfaceType::Gas) {
+        return gas_tuple;
     }
     return tex_tuple;
 }
@@ -179,7 +182,7 @@ static void MortonCopy(u32 stride, u32 height, u8* gl_buffer, PAddr base, PAddr 
     }
 }
 
-static constexpr std::array<void (*)(u32, u32, u8*, PAddr, PAddr, PAddr), 19> morton_to_gl_fns = {
+static constexpr std::array<void (*)(u32, u32, u8*, PAddr, PAddr, PAddr), 20> morton_to_gl_fns = {
     MortonCopy<true, PixelFormat::RGBA8>,  // 0
     MortonCopy<true, PixelFormat::RGB8>,   // 1
     MortonCopy<true, PixelFormat::RGB5A1>, // 2
@@ -199,9 +202,10 @@ static constexpr std::array<void (*)(u32, u32, u8*, PAddr, PAddr, PAddr), 19> mo
     MortonCopy<true, PixelFormat::D24>,    // 16
     MortonCopy<true, PixelFormat::D24S8>,  // 17
     MortonCopy<true, PixelFormat::Shadow>, // 18
+    MortonCopy<true, PixelFormat::Gas>,    // 19
 };
 
-static constexpr std::array<void (*)(u32, u32, u8*, PAddr, PAddr, PAddr), 19> gl_to_morton_fns = {
+static constexpr std::array<void (*)(u32, u32, u8*, PAddr, PAddr, PAddr), 20> gl_to_morton_fns = {
     MortonCopy<false, PixelFormat::RGBA8>,  // 0
     MortonCopy<false, PixelFormat::RGB8>,   // 1
     MortonCopy<false, PixelFormat::RGB5A1>, // 2
@@ -221,6 +225,7 @@ static constexpr std::array<void (*)(u32, u32, u8*, PAddr, PAddr, PAddr), 19> gl
     MortonCopy<false, PixelFormat::D24>,    // 16
     MortonCopy<false, PixelFormat::D24S8>,  // 17
     MortonCopy<false, PixelFormat::Shadow>, // 18
+    MortonCopy<false, PixelFormat::Gas>,    // 19
 };
 
 // Allocate an uninitialized texture of appropriate size and format for the surface
@@ -292,7 +297,7 @@ static bool BlitTextures(GLuint src_tex, const MathUtil::Rectangle<u32>& src_rec
 
     u32 buffers = 0;
 
-    if (type == SurfaceType::Color || type == SurfaceType::Texture) {
+    if (type == SurfaceType::Color || type == SurfaceType::Texture || type == SurfaceType::Gas) {
         glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, src_tex,
                                0);
         glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, 0,
@@ -408,6 +413,24 @@ static bool FillSurface(const Surface& surface, const u8* fill_data,
         state.stencil.write_mask = -1;
         state.Apply();
         glClearBufferfi(GL_DEPTH_STENCIL, 0, value_float, value_int);
+    } else if (surface->type == SurfaceType::Gas) {
+        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                               surface->texture.handle, 0);
+        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, 0,
+                               0);
+
+        u16 r, g;
+        std::memcpy(&r, fill_data, 2);
+        std::memcpy(&g, fill_data + 2, 2);
+
+        std::array<GLfloat, 4> color_values = {r / 65535.0f, g / 65535.0f, 0.0f, 0.0f};
+
+        state.color_mask.red_enabled = GL_TRUE;
+        state.color_mask.green_enabled = GL_TRUE;
+        state.color_mask.blue_enabled = GL_FALSE;
+        state.color_mask.alpha_enabled = GL_FALSE;
+        state.Apply();
+        glClearBufferfv(GL_COLOR, 0, &color_values[0]);
     }
     return true;
 }
@@ -860,7 +883,8 @@ void CachedSurface::DownloadGLTexture(const MathUtil::Rectangle<u32>& rect, GLui
         state.draw.read_framebuffer = read_fb_handle;
         state.Apply();
 
-        if (type == SurfaceType::Color || type == SurfaceType::Texture) {
+        if (type == SurfaceType::Color || type == SurfaceType::Texture ||
+            type == SurfaceType::Gas) {
             glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
                                    texture.handle, 0);
             glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D,
@@ -1249,8 +1273,15 @@ Surface RasterizerCacheOpenGL::GetTextureSurface(
     return GetTextureSurface(info, shadow);
 }
 
+Surface RasterizerCacheOpenGL::GetGasTextureSurface(
+    const Pica::TexturingRegs::FullTextureConfig& config) {
+    Pica::Texture::TextureInfo info =
+        Pica::Texture::TextureInfo::FromPicaRegister(config.config, config.format);
+    return GetTextureSurface(info, false, true);
+}
+
 Surface RasterizerCacheOpenGL::GetTextureSurface(const Pica::Texture::TextureInfo& info,
-                                                 bool shadow) {
+                                                 bool shadow, bool gas) {
     SurfaceParams params;
     params.addr = info.physical_address;
     params.width = info.width;
@@ -1258,6 +1289,8 @@ Surface RasterizerCacheOpenGL::GetTextureSurface(const Pica::Texture::TextureInf
     params.is_tiled = true;
     if (shadow)
         params.pixel_format = PixelFormat::Shadow;
+    else if (gas)
+        params.pixel_format = PixelFormat::Gas;
     else
         params.pixel_format = SurfaceParams::PixelFormatFromTextureFormat(info.format);
     params.UpdateParams();
@@ -1412,6 +1445,9 @@ SurfaceSurfaceRect_Tuple RasterizerCacheOpenGL::GetFramebufferSurfaces(
         // In shadow map rendering mode, the color buffer is actually used as the depth buffer
         using_depth_fb = std::exchange(using_color_fb, false);
         depth_params.pixel_format = PixelFormat::Shadow;
+    } else if (regs.framebuffer.output_merger.fragment_operation_mode ==
+               Pica::FramebufferRegs::FragmentOperationMode::Gas) {
+        color_params.pixel_format = PixelFormat::Gas;
     } else {
         depth_params.addr = config.GetDepthBufferPhysicalAddress();
         depth_params.pixel_format = SurfaceParams::PixelFormatFromDepthFormat(config.depth_format);

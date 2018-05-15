@@ -173,9 +173,9 @@ private:
         if (ncch_data.romfs_file) {
             std::unique_ptr<DelayGenerator> delay_generator =
                 std::make_unique<RomFSDelayGenerator>();
-            return MakeResult<std::unique_ptr<FileBackend>>(
-                std::make_unique<IVFCFile>(ncch_data.romfs_file, ncch_data.romfs_offset,
-                                           ncch_data.romfs_size, std::move(delay_generator), ncch_data.aes_context));
+            return MakeResult<std::unique_ptr<FileBackend>>(std::make_unique<IVFCFile>(
+                ncch_data.romfs_file, ncch_data.romfs_offset, ncch_data.romfs_size,
+                std::move(delay_generator), ncch_data.aes_context));
         } else {
             LOG_INFO(Service_FS, "Unable to read RomFS");
             return ERROR_ROMFS_NOT_FOUND;

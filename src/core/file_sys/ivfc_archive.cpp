@@ -94,7 +94,8 @@ u64 IVFCArchive::GetFreeBytes() const {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 IVFCFile::IVFCFile(std::shared_ptr<FileUtil::IOFile> file, u64 offset, u64 size,
-                   std::unique_ptr<DelayGenerator> delay_generator_, boost::optional<Loader::AesContext> aes_context_)
+                   std::unique_ptr<DelayGenerator> delay_generator_,
+                   boost::optional<Loader::AesContext> aes_context_)
     : romfs_file(std::move(file)), data_offset(offset), data_size(size), aes_context(aes_context_) {
     delay_generator = std::move(delay_generator_);
 }

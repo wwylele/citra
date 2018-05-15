@@ -36,8 +36,7 @@ struct State {
         BitField<24, 8, u32> a;
 
         Math::Vec4<u8> ToVector() const {
-            return {static_cast<u8>(r), static_cast<u8>(g), static_cast<u8>(b),
-                    static_cast<u8>(a)};
+            return {static_cast<u8>(r), static_cast<u8>(g), static_cast<u8>(b), static_cast<u8>(a)};
         }
     };
 

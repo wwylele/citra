@@ -82,6 +82,7 @@ struct SurfaceParams {
         D24S8 = 17,
 
         Shadow = 18,
+        Gas = 19,
 
         Invalid = 255,
     };
@@ -92,12 +93,13 @@ struct SurfaceParams {
         Depth = 2,
         DepthStencil = 3,
         Shadow = 4,
-        Fill = 5,
-        Invalid = 6
+        Gas = 5,
+        Fill = 6,
+        Invalid = 7,
     };
 
     static constexpr unsigned int GetFormatBpp(PixelFormat format) {
-        constexpr std::array<unsigned int, 19> bpp_table = {
+        constexpr std::array<unsigned int, 20> bpp_table = {
             32, // RGBA8
             24, // RGB8
             16, // RGB5A1
@@ -117,6 +119,7 @@ struct SurfaceParams {
             24, // D24
             32, // D24S8
             32, // Shadow
+            32, // Gas
         };
 
         assert(static_cast<size_t>(format) < bpp_table.size());
@@ -169,6 +172,10 @@ struct SurfaceParams {
         }
 
         if (a_type == SurfaceType::Shadow && b_type == SurfaceType::Shadow) {
+            return true;
+        }
+
+        if (a_type == SurfaceType::Gas && b_type == SurfaceType::Gas) {
             return true;
         }
 
@@ -439,7 +446,9 @@ public:
 
     /// Get a surface based on the texture configuration
     Surface GetTextureSurface(const Pica::TexturingRegs::FullTextureConfig& config);
-    Surface GetTextureSurface(const Pica::Texture::TextureInfo& info, bool shadow = false);
+    Surface GetGasTextureSurface(const Pica::TexturingRegs::FullTextureConfig& config);
+    Surface GetTextureSurface(const Pica::Texture::TextureInfo& info, bool shadow = false,
+                              bool gas = false);
 
     /// Get a texture cube based on the texture configuration
     const CachedTextureCube& GetTextureCube(const TextureCubeConfig& config);

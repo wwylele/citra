@@ -259,6 +259,7 @@ public:
     boost::optional<AesContext> exefs_aes;
     boost::optional<AesContext> exerfs_code_aes;
     boost::optional<AesContext> romfs_aes;
+
 private:
     bool has_header = false;
     bool has_exheader = false;

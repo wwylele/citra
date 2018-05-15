@@ -92,7 +92,8 @@ protected:
 class IVFCFile : public FileBackend {
 public:
     IVFCFile(std::shared_ptr<FileUtil::IOFile> file, u64 offset, u64 size,
-             std::unique_ptr<DelayGenerator> delay_generator_, boost::optional<Loader::AesContext> aes_context_ = {});
+             std::unique_ptr<DelayGenerator> delay_generator_,
+             boost::optional<Loader::AesContext> aes_context_ = {});
 
     ResultVal<size_t> Read(u64 offset, size_t length, u8* buffer) const override;
     ResultVal<size_t> Write(u64 offset, size_t length, bool flush, const u8* buffer) override;

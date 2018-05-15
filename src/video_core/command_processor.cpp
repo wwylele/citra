@@ -14,6 +14,8 @@
 #include "core/hw/gpu.h"
 #include "core/memory.h"
 #include "core/tracer/recorder.h"
+#include "pica_state.h"
+#include "regs_framebuffer.h"
 #include "video_core/command_processor.h"
 #include "video_core/debug_utils/debug_utils.h"
 #include "video_core/pica_state.h"
@@ -27,8 +29,6 @@
 #include "video_core/shader/shader.h"
 #include "video_core/vertex_loader.h"
 #include "video_core/video_core.h"
-#include "regs_framebuffer.h"
-#include "pica_state.h"
 
 namespace Pica {
 
@@ -645,28 +645,28 @@ static void WritePicaReg(u32 id, u32 value, u32 mask) {
         break;
     }
     case PICA_REG_INDEX(texturing.gas_attenuation):
-        //LOG_INFO(HW_GPU, "gas_attenuation = %f",
+        // LOG_INFO(HW_GPU, "gas_attenuation = %f",
         //         float16::FromRaw(regs.texturing.gas_attenuation).ToFloat32());
         break;
     case PICA_REG_INDEX(texturing.gas_acc_max):
-        //LOG_INFO(HW_GPU, "gas_acc_max = %f",
+        // LOG_INFO(HW_GPU, "gas_acc_max = %f",
         //         float16::FromRaw(regs.texturing.gas_acc_max).ToFloat32());
         break;
     case PICA_REG_INDEX(framebuffer.gas.light_xy):
-        //LOG_INFO(HW_GPU, "gas.light_xy = min %u, max %u, att %u",
+        // LOG_INFO(HW_GPU, "gas.light_xy = min %u, max %u, att %u",
         //         regs.framebuffer.gas.light_xy.min_intensity.Value(),
-       //          regs.framebuffer.gas.light_xy.max_intensity.Value(),
+        //          regs.framebuffer.gas.light_xy.max_intensity.Value(),
         //         regs.framebuffer.gas.light_xy.density_attenuation.Value());
         break;
     case PICA_REG_INDEX(framebuffer.gas.light_z):
-        //LOG_INFO(HW_GPU, "gas.light_z = min %u, max %u, att %u",
+        // LOG_INFO(HW_GPU, "gas.light_z = min %u, max %u, att %u",
         //         regs.framebuffer.gas.light_z.min_intensity.Value(),
         //         regs.framebuffer.gas.light_z.max_intensity.Value(),
         //         regs.framebuffer.gas.light_z.density_attenuation.Value());
         break;
     case PICA_REG_INDEX(framebuffer.gas.z_shading_effect):
-        //LOG_INFO(HW_GPU, "gas.LZ = %u", regs.framebuffer.gas.z_shading_effect.Value());
-        //LOG_INFO(HW_GPU, "gas.lut_input = %u", regs.framebuffer.gas.lut_input.Value());
+        // LOG_INFO(HW_GPU, "gas.LZ = %u", regs.framebuffer.gas.z_shading_effect.Value());
+        // LOG_INFO(HW_GPU, "gas.lut_input = %u", regs.framebuffer.gas.lut_input.Value());
         break;
     case PICA_REG_INDEX(framebuffer.gas.lut_data):
         if (regs.framebuffer.gas.lut_index < 8) {
@@ -677,11 +677,11 @@ static void WritePicaReg(u32 id, u32 value, u32 mask) {
         regs.framebuffer.gas.lut_index.Assign(regs.framebuffer.gas.lut_index + 1);
         break;
     case PICA_REG_INDEX(framebuffer.gas.auto_acc_reset):
-        //LOG_INFO(HW_GPU, "acc_reset!");
+        // LOG_INFO(HW_GPU, "acc_reset!");
         break;
     case PICA_REG_INDEX(framebuffer.gas.delta_z):
-        //LOG_INFO(HW_GPU, "gas.delta_z = %f, depth_func = %u", regs.framebuffer.gas.delta_z / 256.f,
-        //regs.framebuffer.gas.depth_function.Value());
+        // LOG_INFO(HW_GPU, "gas.delta_z = %f, depth_func = %u", regs.framebuffer.gas.delta_z /
+        // 256.f, regs.framebuffer.gas.depth_function.Value());
     default:
         break;
     }
