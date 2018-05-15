@@ -372,10 +372,12 @@ struct TextureCubeConfig {
     PAddr nz;
     u32 width;
     Pica::TexturingRegs::TextureFormat format;
+    bool shadow;
 
     bool operator==(const TextureCubeConfig& rhs) const {
-        return std::tie(px, nx, py, ny, pz, nz, width, format) ==
-               std::tie(rhs.px, rhs.nx, rhs.py, rhs.ny, rhs.pz, rhs.nz, rhs.width, rhs.format);
+        return std::tie(px, nx, py, ny, pz, nz, width, format, shadow) ==
+               std::tie(rhs.px, rhs.nx, rhs.py, rhs.ny, rhs.pz, rhs.nz, rhs.width, rhs.format,
+                        shadow);
     }
 
     bool operator!=(const TextureCubeConfig& rhs) const {
@@ -396,6 +398,7 @@ struct hash<TextureCubeConfig> {
         boost::hash_combine(hash, config.nz);
         boost::hash_combine(hash, config.width);
         boost::hash_combine(hash, static_cast<u32>(config.format));
+        boost::hash_combine(hash, config.shadow);
         return hash;
     }
 };

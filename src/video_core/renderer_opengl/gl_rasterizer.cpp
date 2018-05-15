@@ -50,6 +50,7 @@ RasterizerOpenGL::RasterizerOpenGL()
     // Create shadow map texture and sampler objects
     texture_shadow_sampler.Create();
     state.texture_shadow_unit.sampler = texture_shadow_sampler.sampler.handle;
+    state.texture_shadow_cube_unit.sampler = texture_shadow_sampler.sampler.handle;
 
     // Create cubemap texture and sampler objects
     texture_cube_sampler.Create();
@@ -662,7 +663,7 @@ bool RasterizerOpenGL::Draw(bool accelerate, bool is_indexed) {
             if (texture_index == 0) {
                 using TextureType = Pica::TexturingRegs::TextureConfig::TextureType;
                 switch (texture.config.type.Value()) {
-                case TextureType::TextureCube:
+                case TextureType::TextureCube: {
                     using CubeFace = Pica::TexturingRegs::CubeFace;
                     TextureCubeConfig config;
                     config.px = regs.texturing.GetCubePhysicalAddress(CubeFace::PositiveX);
@@ -673,13 +674,15 @@ bool RasterizerOpenGL::Draw(bool accelerate, bool is_indexed) {
                     config.nz = regs.texturing.GetCubePhysicalAddress(CubeFace::NegativeZ);
                     config.width = texture.config.width;
                     config.format = texture.format;
+                    config.shadow = false;
                     state.texture_cube_unit.texture_cube =
                         res_cache.GetTextureCube(config).texture.handle;
 
                     texture_cube_sampler.SyncWithConfig(texture.config);
                     state.texture_units[texture_index].texture_2d = 0;
                     continue; // Texture unit 0 setup finished. Continue to next unit
-                case TextureType::Shadow2D:
+                }
+                case TextureType::Shadow2D: {
                     texture_shadow_sampler.SyncWithConfig(texture.config);
                     state.texture_units[texture_index].texture_2d = 0;
                     Surface surface = res_cache.GetTextureSurface(texture);
@@ -689,6 +692,24 @@ bool RasterizerOpenGL::Draw(bool accelerate, bool is_indexed) {
                         state.texture_shadow_unit.texture_2d = 0;
                     }
                     continue;
+                }
+                case TextureType::ShadowCube: {
+                    texture_shadow_sampler.SyncWithConfig(texture.config);
+                    state.texture_units[texture_index].texture_2d = 0;
+                    using CubeFace = Pica::TexturingRegs::CubeFace;
+                    TextureCubeConfig config;
+                    config.px = regs.texturing.GetCubePhysicalAddress(CubeFace::PositiveX);
+                    config.nx = regs.texturing.GetCubePhysicalAddress(CubeFace::NegativeX);
+                    config.py = regs.texturing.GetCubePhysicalAddress(CubeFace::PositiveY);
+                    config.ny = regs.texturing.GetCubePhysicalAddress(CubeFace::NegativeY);
+                    config.pz = regs.texturing.GetCubePhysicalAddress(CubeFace::PositiveZ);
+                    config.nz = regs.texturing.GetCubePhysicalAddress(CubeFace::NegativeZ);
+                    config.width = texture.config.width;
+                    config.format = texture.format;
+                    config.shadow = true;
+                    state.texture_shadow_cube_unit.texture_cube =
+                        res_cache.GetTextureCube(config).texture.handle;
+                }
                 }
             }
 
@@ -808,6 +829,7 @@ bool RasterizerOpenGL::Draw(bool accelerate, bool is_indexed) {
     }
     state.texture_cube_unit.texture_cube = 0;
     state.texture_shadow_unit.texture_2d = 0;
+    state.texture_shadow_cube_unit.texture_cube = 0;
     state.Apply();
 
     // Mark framebuffer surfaces as dirty

@@ -305,9 +305,7 @@ static std::string SampleTexture(const PicaFSConfig& config, unsigned texture_un
         case TexturingRegs::TextureConfig::Shadow2D:
             return "shadowTexture(texcoord0, texcoord0_w)";
         case TexturingRegs::TextureConfig::ShadowCube:
-            NGLOG_CRITICAL(HW_GPU, "Unhandled shadow texture");
-            UNIMPLEMENTED();
-            return "vec4(1.0)"; // stubbed to avoid rendering with wrong shadow
+            return "shadowTextureCube(texcoord0, texcoord0_w)";
         default:
             LOG_CRITICAL(HW_GPU, "Unhandled texture type %x",
                          static_cast<int>(state.texture0_type));
@@ -1202,6 +1200,7 @@ uniform sampler2D tex1;
 uniform sampler2D tex2;
 uniform samplerCube tex_cube;
 uniform sampler2DShadow tex_shadow;
+uniform samplerCubeShadow tex_shadow_cube;
 uniform samplerBuffer lighting_lut;
 uniform samplerBuffer fog_lut;
 uniform samplerBuffer proctex_noise_lut;
@@ -1262,6 +1261,13 @@ vec4 byteround(vec4 x) {
     } else {
         out += "    return vec4(texture(tex_shadow, vec3(uv / w, z)));\n}\n";
     }
+
+    out += "vec4 shadowTextureCube(vec2 uv, float w) {\n";
+    out += "    vec3 a = abs(vec3(uv, w));\n";
+    out += "    float depth = min(max(max(a.x, a.y), a.z), 1.0) - " +
+           std::to_string(state.shadow_texture_bias) + ";\n";
+    out += "    vec4 coord = vec4(uv, w, depth);\n";
+    out += "return vec4(texture(tex_shadow_cube, coord));\n}\n";
 
     if (config.state.proctex.enable)
         AppendProcTexSampler(out, config);

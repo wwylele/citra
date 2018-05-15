@@ -351,6 +351,8 @@ static bool FillSurface(const Surface& surface, const u8* fill_data,
     state.draw.draw_framebuffer = draw_fb_handle;
     state.Apply();
 
+    surface->InvalidateAllWatcher();
+
     if (surface->type == SurfaceType::Color || surface->type == SurfaceType::Texture) {
         glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
                                surface->texture.handle, 0);
@@ -1049,6 +1051,8 @@ bool RasterizerCacheOpenGL::BlitSurfaces(const Surface& src_surface,
     if (!SurfaceParams::CheckFormatsBlittable(src_surface->pixel_format, dst_surface->pixel_format))
         return false;
 
+    dst_surface->InvalidateAllWatcher();
+
     return BlitTextures(src_surface->texture.handle, src_rect, dst_surface->texture.handle,
                         dst_rect, src_surface->type, read_framebuffer.handle,
                         draw_framebuffer.handle);
@@ -1308,7 +1312,7 @@ const CachedTextureCube& RasterizerCacheOpenGL::GetTextureCube(const TextureCube
             info.height = info.width = config.width;
             info.format = config.format;
             info.SetDefaultStride();
-            auto surface = GetTextureSurface(info);
+            auto surface = GetTextureSurface(info, config.shadow);
             if (surface) {
                 face.watcher = surface->CreateWatcher();
             } else {
@@ -1328,11 +1332,15 @@ const CachedTextureCube& RasterizerCacheOpenGL::GetTextureCube(const TextureCube
             }
         }
 
+        PixelFormat format;
+        if (config.shadow) {
+            format = PixelFormat::Shadow;
+        } else {
+            format = CachedSurface::PixelFormatFromTextureFormat(config.format);
+        }
         cube.texture.Create();
-        AllocateTextureCube(
-            cube.texture.handle,
-            GetFormatTuple(CachedSurface::PixelFormatFromTextureFormat(config.format)),
-            cube.res_scale * config.width);
+        AllocateTextureCube(cube.texture.handle, GetFormatTuple(format),
+                            cube.res_scale * config.width);
     }
 
     u32 scaled_size = cube.res_scale * config.width;
@@ -1351,19 +1359,36 @@ const CachedTextureCube& RasterizerCacheOpenGL::GetTextureCube(const TextureCube
             auto surface = face.watcher->Get();
             state.ResetTexture(surface->texture.handle);
             state.Apply();
-            glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-                                   surface->texture.handle, 0);
-            glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D,
-                                   0, 0);
-
-            glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, face.gl_face,
-                                   cube.texture.handle, 0);
-            glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D,
-                                   0, 0);
-
             auto src_rect = surface->GetScaledRect();
-            glBlitFramebuffer(src_rect.left, src_rect.bottom, src_rect.right, src_rect.top, 0, 0,
-                              scaled_size, scaled_size, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+            if (config.shadow) {
+                glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0,
+                                       0);
+                glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
+                                       GL_TEXTURE_2D, surface->texture.handle, 0);
+
+                glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0,
+                                       0);
+                glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
+                                       face.gl_face, cube.texture.handle, 0);
+
+                glBlitFramebuffer(src_rect.left, src_rect.bottom, src_rect.right, src_rect.top, 0,
+                                  0, scaled_size, scaled_size,
+                                  GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT, GL_NEAREST);
+
+            } else {
+                glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                                       surface->texture.handle, 0);
+                glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
+                                       GL_TEXTURE_2D, 0, 0);
+
+                glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, face.gl_face,
+                                       cube.texture.handle, 0);
+                glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
+                                       GL_TEXTURE_2D, 0, 0);
+
+                glBlitFramebuffer(src_rect.left, src_rect.bottom, src_rect.right, src_rect.top, 0,
+                                  0, scaled_size, scaled_size, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+            }
             face.watcher->Validate();
         }
     }
@@ -1462,10 +1487,12 @@ SurfaceSurfaceRect_Tuple RasterizerCacheOpenGL::GetFramebufferSurfaces(
     if (color_surface != nullptr) {
         ValidateSurface(color_surface, boost::icl::first(color_vp_interval),
                         boost::icl::length(color_vp_interval));
+        color_surface->InvalidateAllWatcher();
     }
     if (depth_surface != nullptr) {
         ValidateSurface(depth_surface, boost::icl::first(depth_vp_interval),
                         boost::icl::length(depth_vp_interval));
+        depth_surface->InvalidateAllWatcher();
     }
 
     return std::make_tuple(color_surface, depth_surface, fb_rect);
