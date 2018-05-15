@@ -47,6 +47,7 @@ static void SetShaderSamplerBindings(GLuint shader) {
     SetShaderSamplerBinding(shader, "tex2", TextureUnits::PicaTexture(2));
     SetShaderSamplerBinding(shader, "tex_cube", TextureUnits::TextureCube);
     SetShaderSamplerBinding(shader, "tex_shadow", TextureUnits::TextureShadow);
+    SetShaderSamplerBinding(shader, "tex_gas_depth", TextureUnits::TextureGasDepth);
 
     // Set the texture samplers to correspond to different lookup table texture units
     SetShaderSamplerBinding(shader, "lighting_lut", TextureUnits::LightingLUT);
@@ -56,6 +57,8 @@ static void SetShaderSamplerBindings(GLuint shader) {
     SetShaderSamplerBinding(shader, "proctex_alpha_map", TextureUnits::ProcTexAlphaMap);
     SetShaderSamplerBinding(shader, "proctex_lut", TextureUnits::ProcTexLUT);
     SetShaderSamplerBinding(shader, "proctex_diff_lut", TextureUnits::ProcTexDiffLUT);
+    SetShaderSamplerBinding(shader, "gas_lut", TextureUnits::GasLUT);
+    SetShaderSamplerBinding(shader, "gas_diff_lut", TextureUnits::GasDiffLUT);
 
     cur_state.draw.shader_program = old_program;
     cur_state.Apply();

@@ -164,6 +164,9 @@ private:
     void SyncProcTexLUT();
     void SyncProcTexDiffLUT();
 
+    void SyncGasLUT();
+    void SyncGasDiffLUT();
+
     /// Syncs the alpha test states to match the PICA register
     void SyncAlphaTest();
 
@@ -266,6 +269,8 @@ private:
         bool proctex_alpha_map_dirty;
         bool proctex_lut_dirty;
         bool proctex_diff_lut_dirty;
+        bool gas_lut_dirty;
+        bool gas_diff_lut_dirty;
         bool dirty;
     } uniform_block_data = {};
 
@@ -320,4 +325,12 @@ private:
     OGLBuffer proctex_diff_lut_buffer;
     OGLTexture proctex_diff_lut;
     std::array<GLvec4, 256> proctex_diff_lut_data{};
+
+    OGLBuffer gas_lut_buffer;
+    OGLTexture gas_lut;
+    std::array<GLvec4, 8> gas_lut_data{};
+
+    OGLBuffer gas_diff_lut_buffer;
+    OGLTexture gas_diff_lut;
+    std::array<GLvec4, 8> gas_diff_lut_data{};
 };

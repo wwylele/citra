@@ -203,6 +203,10 @@ struct SurfaceParams {
             return SurfaceType::Shadow;
         }
 
+        if (pixel_format == PixelFormat::Gas) {
+            return SurfaceType::Gas;
+        }
+
         return SurfaceType::Invalid;
     }
 

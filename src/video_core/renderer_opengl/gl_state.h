@@ -29,6 +29,9 @@ constexpr TextureUnit ProcTexLUT{8};
 constexpr TextureUnit ProcTexDiffLUT{9};
 constexpr TextureUnit TextureCube{10};
 constexpr TextureUnit TextureShadow{11};
+constexpr TextureUnit TextureGasDepth{12};
+constexpr TextureUnit GasLUT{13};
+constexpr TextureUnit GasDiffLUT{14};
 
 } // namespace TextureUnits
 
@@ -100,6 +103,10 @@ public:
     } texture_shadow_unit;
 
     struct {
+        GLuint texture_2d; // GL_TEXTURE_BINDING_2D
+    } texture_gas_depth_unit;
+
+    struct {
         GLuint texture_buffer; // GL_TEXTURE_BINDING_BUFFER
     } lighting_lut;
 
@@ -126,6 +133,14 @@ public:
     struct {
         GLuint texture_buffer; // GL_TEXTURE_BINDING_BUFFER
     } proctex_diff_lut;
+
+    struct {
+        GLuint texture_buffer; // GL_TEXTURE_BINDING_BUFFER
+    } gas_lut;
+
+    struct {
+        GLuint texture_buffer; // GL_TEXTURE_BINDING_BUFFER
+    } gas_diff_lut;
 
     struct {
         GLuint read_framebuffer; // GL_READ_FRAMEBUFFER_BINDING

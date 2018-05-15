@@ -55,6 +55,8 @@ OpenGLState::OpenGLState() {
     texture_cube_unit.texture_cube = 0;
     texture_cube_unit.sampler = 0;
 
+    texture_gas_depth_unit.texture_2d = 0;
+
     texture_shadow_unit.texture_2d = 0;
     texture_shadow_unit.sampler = 0;
 
@@ -67,6 +69,9 @@ OpenGLState::OpenGLState() {
     proctex_color_map.texture_buffer = 0;
     proctex_alpha_map.texture_buffer = 0;
     proctex_noise_lut.texture_buffer = 0;
+
+    gas_lut.texture_buffer = 0;
+    gas_diff_lut.texture_buffer = 0;
 
     draw.read_framebuffer = 0;
     draw.draw_framebuffer = 0;
@@ -224,6 +229,11 @@ void OpenGLState::Apply() const {
         glBindSampler(TextureUnits::TextureShadow.id, texture_shadow_unit.sampler);
     }
 
+    if (texture_gas_depth_unit.texture_2d != cur_state.texture_gas_depth_unit.texture_2d) {
+        glActiveTexture(TextureUnits::TextureGasDepth.Enum());
+        glBindTexture(GL_TEXTURE_2D, texture_gas_depth_unit.texture_2d);
+    }
+
     // Lighting LUTs
     if (lighting_lut.texture_buffer != cur_state.lighting_lut.texture_buffer) {
         glActiveTexture(TextureUnits::LightingLUT.Enum());
@@ -264,6 +274,17 @@ void OpenGLState::Apply() const {
     if (proctex_diff_lut.texture_buffer != cur_state.proctex_diff_lut.texture_buffer) {
         glActiveTexture(TextureUnits::ProcTexDiffLUT.Enum());
         glBindTexture(GL_TEXTURE_BUFFER, proctex_diff_lut.texture_buffer);
+    }
+
+    //
+    if (gas_lut.texture_buffer != cur_state.gas_lut.texture_buffer) {
+        glActiveTexture(TextureUnits::GasLUT.Enum());
+        glBindTexture(GL_TEXTURE_BUFFER, gas_lut.texture_buffer);
+    }
+
+    if (gas_diff_lut.texture_buffer != cur_state.gas_diff_lut.texture_buffer) {
+        glActiveTexture(TextureUnits::GasDiffLUT.Enum());
+        glBindTexture(GL_TEXTURE_BUFFER, gas_diff_lut.texture_buffer);
     }
 
     // Framebuffer
@@ -341,6 +362,8 @@ OpenGLState& OpenGLState::ResetTexture(GLuint handle) {
     }
     if (texture_cube_unit.texture_cube == handle)
         texture_cube_unit.texture_cube = 0;
+    if (texture_gas_depth_unit.texture_2d == handle)
+        texture_gas_depth_unit.texture_2d = 0;
     if (texture_shadow_unit.texture_2d == handle)
         texture_shadow_unit.texture_2d = 0;
     if (lighting_lut.texture_buffer == handle)
@@ -357,6 +380,10 @@ OpenGLState& OpenGLState::ResetTexture(GLuint handle) {
         proctex_lut.texture_buffer = 0;
     if (proctex_diff_lut.texture_buffer == handle)
         proctex_diff_lut.texture_buffer = 0;
+    if (gas_lut.texture_buffer == handle)
+        gas_lut.texture_buffer = 0;
+    if (gas_diff_lut.texture_buffer == handle)
+        gas_diff_lut.texture_buffer = 0;
     return *this;
 }
 

@@ -71,6 +71,9 @@ RasterizerOpenGL::RasterizerOpenGL()
     uniform_block_data.proctex_lut_dirty = true;
     uniform_block_data.proctex_diff_lut_dirty = true;
 
+    uniform_block_data.gas_lut_dirty = true;
+    uniform_block_data.gas_diff_lut_dirty = true;
+
     glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &uniform_buffer_alignment);
     uniform_size_aligned_vs =
         Common::AlignUp<size_t>(sizeof(VSUniformData), uniform_buffer_alignment);
@@ -188,6 +191,24 @@ RasterizerOpenGL::RasterizerOpenGL()
     glBufferData(GL_TEXTURE_BUFFER, sizeof(GLfloat) * 4 * 256, nullptr, GL_DYNAMIC_DRAW);
     glActiveTexture(TextureUnits::ProcTexDiffLUT.Enum());
     glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, proctex_diff_lut_buffer.handle);
+
+    gas_lut.Create();
+    state.gas_lut.texture_buffer = gas_lut.handle;
+    state.Apply();
+    gas_lut_buffer.Create();
+    glBindBuffer(GL_TEXTURE_BUFFER, gas_lut_buffer.handle);
+    glBufferData(GL_TEXTURE_BUFFER, sizeof(GLfloat) * 4 * 8, nullptr, GL_DYNAMIC_DRAW);
+    glActiveTexture(TextureUnits::GasLUT.Enum());
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, gas_lut_buffer.handle);
+
+    gas_diff_lut.Create();
+    state.gas_diff_lut.texture_buffer = gas_diff_lut.handle;
+    state.Apply();
+    gas_diff_lut_buffer.Create();
+    glBindBuffer(GL_TEXTURE_BUFFER, gas_diff_lut_buffer.handle);
+    glBufferData(GL_TEXTURE_BUFFER, sizeof(GLfloat) * 4 * 8, nullptr, GL_DYNAMIC_DRAW);
+    glActiveTexture(TextureUnits::GasDiffLUT.Enum());
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, gas_diff_lut_buffer.handle);
 
     // Bind index buffer for hardware shader path
     state.draw.vertex_array = hw_vao.handle;
@@ -537,6 +558,9 @@ bool RasterizerOpenGL::Draw(bool accelerate, bool is_indexed) {
     MICROPROFILE_SCOPE(OpenGL_Drawing);
     const auto& regs = Pica::g_state.regs;
 
+    bool gas = regs.framebuffer.output_merger.fragment_operation_mode ==
+               Pica::FramebufferRegs::FragmentOperationMode::Gas;
+
     const bool has_stencil =
         regs.framebuffer.framebuffer.depth_format == Pica::FramebufferRegs::DepthFormat::D24S8;
 
@@ -552,8 +576,9 @@ bool RasterizerOpenGL::Draw(bool accelerate, bool is_indexed) {
         regs.framebuffer.framebuffer.GetColorBufferPhysicalAddress() != 0 && write_color_fb;
     const bool using_depth_fb =
         regs.framebuffer.framebuffer.GetDepthBufferPhysicalAddress() != 0 &&
-        (write_depth_fb || regs.framebuffer.output_merger.depth_test_enable != 0 ||
-         (has_stencil && state.stencil.test_enabled));
+        ((write_depth_fb || regs.framebuffer.output_merger.depth_test_enable != 0 ||
+          (has_stencil && state.stencil.test_enabled)) ||
+         gas);
 
     MathUtil::Rectangle<s32> viewport_rect_unscaled{
         // These registers hold half-width and half-height, so must be multiplied by 2
@@ -595,9 +620,11 @@ bool RasterizerOpenGL::Draw(bool accelerate, bool is_indexed) {
     state.draw.draw_framebuffer = framebuffer.handle;
     state.Apply();
 
+    GLuint gas_buffer;
+
     glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
                            color_surface != nullptr ? color_surface->texture.handle : 0, 0);
-    if (depth_surface != nullptr) {
+    if (depth_surface != nullptr && !gas) {
         if (has_stencil) {
             // attach both depth and stencil
             glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D,
@@ -610,9 +637,12 @@ bool RasterizerOpenGL::Draw(bool accelerate, bool is_indexed) {
             glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
         }
     } else {
-        // clear both depth and stencil attachment
+        gas_buffer = color_surface->texture.handle;
         glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, 0,
                                0);
+        if (depth_surface != nullptr && gas) {
+            state.texture_gas_depth_unit.texture_2d = depth_surface->texture.handle;
+        }
     }
 
     // Sync the viewport
@@ -651,6 +681,24 @@ bool RasterizerOpenGL::Draw(bool accelerate, bool is_indexed) {
         uniform_block_data.data.scissor_y1 = scissor_y1;
         uniform_block_data.data.scissor_y2 = scissor_y2;
         uniform_block_data.dirty = true;
+    }
+
+    unsigned gas_texture_index = 100;
+    if (regs.texturing.fog_mode == Pica::TexturingRegs::FogMode::Gas) {
+        using Source = Pica::TexturingRegs::TevStageConfig::Source;
+        switch (regs.texturing.tev_stage5.color_source3) {
+        case Source::Texture0:
+            gas_texture_index = 0;
+            break;
+
+        case Source::Texture1:
+            gas_texture_index = 1;
+            break;
+
+        case Source::Texture2:
+            gas_texture_index = 2;
+            break;
+        }
     }
 
     // Sync and bind the texture surfaces
@@ -693,7 +741,12 @@ bool RasterizerOpenGL::Draw(bool accelerate, bool is_indexed) {
             }
 
             texture_samplers[texture_index].SyncWithConfig(texture.config);
-            Surface surface = res_cache.GetTextureSurface(texture);
+            Surface surface;
+            if (gas_texture_index == texture_index) {
+                surface = res_cache.GetGasTextureSurface(texture);
+            } else {
+                surface = res_cache.GetTextureSurface(texture);
+            }
             if (surface != nullptr) {
                 state.texture_units[texture_index].texture_2d = surface->texture.handle;
             } else {
@@ -755,6 +808,16 @@ bool RasterizerOpenGL::Draw(bool accelerate, bool is_indexed) {
         uniform_block_data.proctex_diff_lut_dirty = false;
     }
 
+    if (uniform_block_data.gas_lut_dirty) {
+        SyncGasLUT();
+        uniform_block_data.gas_lut_dirty = false;
+    }
+
+    if (uniform_block_data.gas_diff_lut_dirty) {
+        SyncGasDiffLUT();
+        uniform_block_data.gas_diff_lut_dirty = false;
+    }
+
     // Sync the uniform data
     const bool use_gs = regs.pipeline.use_gs == Pica::PipelineRegs::UseGS::Yes;
     UploadUniforms(accelerate, use_gs);
@@ -807,7 +870,23 @@ bool RasterizerOpenGL::Draw(bool accelerate, bool is_indexed) {
         state.texture_units[texture_index].texture_2d = 0;
     }
     state.texture_cube_unit.texture_cube = 0;
+    state.texture_gas_depth_unit.texture_2d = 0;
+    state.texture_shadow_unit.texture_2d = 0;
     state.Apply();
+
+    if (gas) {
+        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+        std::vector<float> buffer(color_surface->GetScaledWidth() *
+                                  color_surface->GetScaledHeight());
+        state.texture_units[0].texture_2d = color_surface->texture.handle;
+        state.Apply();
+        glActiveTexture(GL_TEXTURE0);
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RED, GL_FLOAT, buffer.data());
+        uniform_block_data.data.gas_max = *std::max_element(buffer.begin(), buffer.end());
+        uniform_block_data.dirty = true;
+        state.texture_units[0].texture_2d = 0;
+        state.Apply();
+    }
 
     // Mark framebuffer surfaces as dirty
     MathUtil::Rectangle<u32> draw_rect_unscaled{
@@ -865,6 +944,7 @@ void RasterizerOpenGL::NotifyPicaRegisterChanged(u32 id) {
     // Blending and fragment mode
     case PICA_REG_INDEX(framebuffer.output_merger.fragment_operation_mode):
         SyncBlendEnabled();
+        SyncBlendFuncs();
         SyncStencilWriteMask();
         SyncDepthWriteMask();
         SyncStencilTest();
@@ -931,6 +1011,11 @@ void RasterizerOpenGL::NotifyPicaRegisterChanged(u32 id) {
             uniform_block_data.proctex_diff_lut_dirty = true;
             break;
         }
+        break;
+
+    case PICA_REG_INDEX(framebuffer.gas.lut_data):
+        uniform_block_data.gas_lut_dirty = true;
+        uniform_block_data.gas_diff_lut_dirty = true;
         break;
 
     // Alpha test
@@ -1628,11 +1713,23 @@ void RasterizerOpenGL::SyncDepthOffset() {
 }
 
 void RasterizerOpenGL::SyncBlendEnabled() {
+    if (Pica::g_state.regs.framebuffer.output_merger.fragment_operation_mode ==
+        Pica::FramebufferRegs::FragmentOperationMode::Gas) {
+        state.blend.enabled = true;
+        return;
+    }
     state.blend.enabled = (Pica::g_state.regs.framebuffer.output_merger.alphablend_enable == 1);
 }
 
 void RasterizerOpenGL::SyncBlendFuncs() {
     const auto& regs = Pica::g_state.regs;
+    if (regs.framebuffer.output_merger.fragment_operation_mode ==
+        Pica::FramebufferRegs::FragmentOperationMode::Gas) {
+        state.blend.rgb_equation = GL_FUNC_ADD;
+        state.blend.src_rgb_func = GL_ONE;
+        state.blend.dst_rgb_func = GL_ONE;
+        return;
+    }
     state.blend.rgb_equation =
         PicaToGL::BlendEquation(regs.framebuffer.output_merger.alpha_blending.blend_equation_rgb);
     state.blend.a_equation =
@@ -1759,6 +1856,39 @@ void RasterizerOpenGL::SyncProcTexDiffLUT() {
     if (new_data != proctex_diff_lut_data) {
         proctex_diff_lut_data = new_data;
         glBindBuffer(GL_TEXTURE_BUFFER, proctex_diff_lut_buffer.handle);
+        glBufferSubData(GL_TEXTURE_BUFFER, 0, new_data.size() * sizeof(GLvec4), new_data.data());
+    }
+}
+
+void RasterizerOpenGL::SyncGasLUT() {
+    std::array<GLvec4, 8> new_data;
+
+    std::transform(Pica::g_state.gas.color_table.begin(), Pica::g_state.gas.color_table.end(),
+                   new_data.begin(), [](const auto& entry) {
+                       auto rgba = entry.ToVector() / 255.0f;
+                       return GLvec4{rgba.r(), rgba.g(), rgba.b(), rgba.a()};
+                   });
+
+    if (new_data != gas_lut_data) {
+        gas_lut_data = new_data;
+        glBindBuffer(GL_TEXTURE_BUFFER, gas_lut_buffer.handle);
+        glBufferSubData(GL_TEXTURE_BUFFER, 0, new_data.size() * sizeof(GLvec4), new_data.data());
+    }
+}
+
+void RasterizerOpenGL::SyncGasDiffLUT() {
+    std::array<GLvec4, 8> new_data;
+
+    std::transform(Pica::g_state.gas.color_diff_table.begin(),
+                   Pica::g_state.gas.color_diff_table.end(), new_data.begin(),
+                   [](const auto& entry) {
+                       auto rgba = entry.ToVector() / 255.0f;
+                       return GLvec4{rgba.r(), rgba.g(), rgba.b(), rgba.a()};
+                   });
+
+    if (new_data != gas_diff_lut_data) {
+        gas_diff_lut_data = new_data;
+        glBindBuffer(GL_TEXTURE_BUFFER, gas_diff_lut_buffer.handle);
         glBufferSubData(GL_TEXTURE_BUFFER, 0, new_data.size() * sizeof(GLvec4), new_data.data());
     }
 }

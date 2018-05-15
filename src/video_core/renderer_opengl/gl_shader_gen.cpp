@@ -10,6 +10,7 @@
 #include "common/bit_set.h"
 #include "common/logging/log.h"
 #include "core/core.h"
+#include "video_core/pica_types.h"
 #include "video_core/regs_framebuffer.h"
 #include "video_core/regs_lighting.h"
 #include "video_core/regs_rasterizer.h"
@@ -53,6 +54,7 @@ layout (std140) uniform shader_data {
     int scissor_y1;
     int scissor_x2;
     int scissor_y2;
+    float gas_max;
     vec3 fog_color;
     vec2 proctex_noise_f;
     vec2 proctex_noise_a;
@@ -222,6 +224,29 @@ PicaFSConfig PicaFSConfig::BuildFromRegs(const Pica::Regs& regs) {
 
     state.shadow_texture_orthographic = regs.texturing.shadow.orthographic != 0;
     state.shadow_texture_bias = (regs.texturing.shadow.bias << 1) / 16777215.0f; // 2^24 - 1
+
+    state.gas.enable = regs.framebuffer.output_merger.fragment_operation_mode ==
+                       FramebufferRegs::FragmentOperationMode::Gas;
+    if (state.gas.enable) {
+        state.gas.delta_z = regs.framebuffer.gas.delta_z / 255.0f;
+        state.gas.depth_function = regs.framebuffer.gas.depth_function;
+    }
+
+    state.gas_combiner.density_src = regs.texturing.gas_shading_density_src;
+    state.gas_combiner.lut_input = regs.framebuffer.gas.lut_input;
+    state.gas_combiner.light_xy.min_intensity =
+        regs.framebuffer.gas.light_xy.min_intensity / 255.0f;
+    state.gas_combiner.light_xy.max_intensity =
+        regs.framebuffer.gas.light_xy.max_intensity / 255.0f;
+    state.gas_combiner.light_xy.density_attenuation =
+        regs.framebuffer.gas.light_xy.density_attenuation / 255.0f;
+    state.gas_combiner.light_z.min_intensity = regs.framebuffer.gas.light_z.min_intensity / 255.0f;
+    state.gas_combiner.light_z.max_intensity = regs.framebuffer.gas.light_z.max_intensity / 255.0f;
+    state.gas_combiner.light_z.density_attenuation =
+        regs.framebuffer.gas.light_z.density_attenuation / 255.0f;
+    state.gas_combiner.z_shading_effect = regs.framebuffer.gas.z_shading_effect / 255.0f;
+    state.gas_combiner.attenuation =
+        Pica::float16::FromRaw(regs.texturing.gas_attenuation).ToFloat32();
 
     return res;
 }
@@ -656,6 +681,55 @@ static void WriteTevStage(std::string& out, const PicaFSConfig& config, unsigned
 
     if (config.TevStageUpdatesCombinerBufferAlpha(index))
         out += "next_combiner_buffer.a = last_tex_env_out.a;\n";
+}
+
+static void WriteGasStage(std::string& out, const PicaFSConfig& config) {
+    const auto& state = config.state;
+
+    const auto stage = static_cast<const TexturingRegs::TevStageConfig>(config.state.tev_stages[5]);
+
+    out += "vec4 C = ";
+    AppendSource(out, config, stage.color_source1, "5");
+    out += ";\n";
+
+    out += "vec2 D = ";
+    AppendSource(out, config, stage.color_source3, "5");
+    out += ".xy;\n";
+
+    switch (state.gas_combiner.density_src) {
+    case TexturingRegs::GasShadingDensitySrc::PlainDensity:
+        out += "float d1 = D.x / gas_max;";
+        break;
+    case TexturingRegs::GasShadingDensitySrc::DepthDensity:
+        out += "float d1 = D.y / gas_max;";
+        break;
+    }
+
+    if (state.gas_combiner.lut_input == FramebufferRegs::GasLutInput::LightFactor) {
+        out += "float igi = clamp((1 - d1 * " +
+               std::to_string(state.gas_combiner.light_xy.density_attenuation) +
+               ") * C.x, 0.0, 1.0);\n";
+        out += "float isi = clamp((1 - d1 * " +
+               std::to_string(state.gas_combiner.light_z.density_attenuation) + ") * " +
+               std::to_string(state.gas_combiner.z_shading_effect) + ", 0.0, 1.0);\n";
+        out += "d1 += mix(" + std::to_string(state.gas_combiner.light_xy.min_intensity) + "," +
+               std::to_string(state.gas_combiner.light_xy.max_intensity) + ",igi);\n";
+        out += "d1 += mix(" + std::to_string(state.gas_combiner.light_z.min_intensity) + "," +
+               std::to_string(state.gas_combiner.light_z.max_intensity) + ",isi);\n";
+        out += "d1 = clamp(d1, 0.0, 1.0);\n";
+    }
+
+    out += "float d2 = clamp(D.y * 256.0 * " + std::to_string(state.gas_combiner.attenuation) +
+           ", 0.0, 1.0);\n";
+
+    out += R"(
+d1 *= 8;
+float rgbi = clamp(floor(d1), 0.0, 7.0);
+float rgbf = d1 - rgbi;
+int rgb_index = int(rgbi);
+last_tex_env_out.xyz = (texelFetch(gas_lut, rgb_index) + rgbf * texelFetch(gas_diff_lut, rgb_index)).xyz;
+last_tex_env_out.w = LookupFogLUT(d2);
+    )";
 }
 
 /// Writes the code to emulate fragment lighting
@@ -1202,6 +1276,7 @@ uniform sampler2D tex1;
 uniform sampler2D tex2;
 uniform samplerCube tex_cube;
 uniform sampler2DShadow tex_shadow;
+uniform sampler2D tex_gas_depth;
 uniform samplerBuffer lighting_lut;
 uniform samplerBuffer fog_lut;
 uniform samplerBuffer proctex_noise_lut;
@@ -1209,6 +1284,8 @@ uniform samplerBuffer proctex_color_map;
 uniform samplerBuffer proctex_alpha_map;
 uniform samplerBuffer proctex_lut;
 uniform samplerBuffer proctex_diff_lut;
+uniform samplerBuffer gas_lut;
+uniform samplerBuffer gas_diff_lut;
 )";
 
     out += UniformBlockDef;
@@ -1235,6 +1312,15 @@ float LookupLightingLUTSigned(int lut_index, float pos) {
     float delta = pos * 128.0 - index;
     if (index < 0) index += 256;
     return LookupLightingLUT(lut_index, index, delta);
+}
+
+float LookupFogLUT(float pos) {
+    float fog_index = pos * 128.0;
+    float fog_i = clamp(floor(fog_index), 0.0, 127.0);
+    float fog_f = fog_index - fog_i;
+    vec2 fog_lut_entry = texelFetch(fog_lut, int(fog_i)).rg;
+    float fog_factor = fog_lut_entry.r + fog_lut_entry.g * fog_f;
+    return clamp(fog_factor, 0.0, 1.0);
 }
 
 float byteround(float x) {
@@ -1309,8 +1395,14 @@ vec4 secondary_fragment_color = vec4(0.0);
     out += "vec4 next_combiner_buffer = tev_combiner_buffer_color;\n";
     out += "vec4 last_tex_env_out = vec4(0.0);\n";
 
-    for (size_t index = 0; index < state.tev_stages.size(); ++index)
+    size_t tev_stages_size = state.tev_stages.size();
+    if (state.fog_mode == TexturingRegs::FogMode::Gas)
+        --tev_stages_size;
+    for (size_t index = 0; index < tev_stages_size; ++index)
         WriteTevStage(out, config, (unsigned)index);
+
+    if (state.fog_mode == TexturingRegs::FogMode::Gas)
+        WriteGasStage(out, config);
 
     if (state.alpha_test_func != FramebufferRegs::CompareFunc::Always) {
         out += "if (";
@@ -1322,31 +1414,47 @@ vec4 secondary_fragment_color = vec4(0.0);
     if (state.fog_mode == TexturingRegs::FogMode::Fog) {
         // Get index into fog LUT
         if (state.fog_flip) {
-            out += "float fog_index = (1.0 - depth) * 128.0;\n";
+            out += "float fog_factor = LookupFogLUT(1.0 - depth);\n";
         } else {
-            out += "float fog_index = depth * 128.0;\n";
+            out += "float fog_factor = LookupFogLUT(depth);\n";
         }
-
-        // Generate clamped fog factor from LUT for given fog index
-        out += "float fog_i = clamp(floor(fog_index), 0.0, 127.0);\n";
-        out += "float fog_f = fog_index - fog_i;\n";
-        out += "vec2 fog_lut_entry = texelFetch(fog_lut, int(fog_i)).rg;\n";
-        out += "float fog_factor = fog_lut_entry.r + fog_lut_entry.g * fog_f;\n";
-        out += "fog_factor = clamp(fog_factor, 0.0, 1.0);\n";
 
         // Blend the fog
         out += "last_tex_env_out.rgb = mix(fog_color.rgb, last_tex_env_out.rgb, fog_factor);\n";
     } else if (state.fog_mode == TexturingRegs::FogMode::Gas) {
-        Core::Telemetry().AddField(Telemetry::FieldType::Session, "VideoCore_Pica_UseGasMode",
-                                   true);
-        LOG_CRITICAL(Render_OpenGL, "Unimplemented gas mode");
-        out += "discard; }";
-        return out;
+        // Core::Telemetry().AddField(Telemetry::FieldType::Session, "VideoCore_Pica_UseGasMode",
+        //                           true);
+        // LOG_CRITICAL(Render_OpenGL, "Unimplemented gas mode");
+        // out += "discard; }";
+        // return out;
     }
 
-    out += "gl_FragDepth = depth;\n";
-    // Round the final fragment color to maintain the PICA's 8 bits of precision
-    out += "color = byteround(last_tex_env_out);\n";
+    if (state.gas.enable) {
+        std::string att =
+            "clamp((texelFetch(tex_gas_depth, ivec2(gl_FragCoord.xy), 0) - depth) * " +
+            std::to_string(state.gas.delta_z) + ", 0.0, 1.0)";
+        switch (state.gas.depth_function) {
+        case FramebufferRegs::GasDepthFunction::Never:
+            att = "0.0";
+            break;
+        case FramebufferRegs::GasDepthFunction::Always:
+            att = "1.0";
+            break;
+        case FramebufferRegs::GasDepthFunction::GreaterThan:
+            att = "1.0 - " + att;
+            break;
+        case FramebufferRegs::GasDepthFunction::LessThan:
+            // keep att
+            break;
+        }
+        out += "color = vec4(byteround(last_tex_env_out).xx * vec2(1.0, " + att +
+               ") * (1 / 256.0), 0.0, 0.0);\n";
+
+    } else {
+        out += "gl_FragDepth = depth;\n";
+        // Round the final fragment color to maintain the PICA's 8 bits of precision
+        out += "color = byteround(last_tex_env_out);\n";
+    }
 
     out += "}";
 

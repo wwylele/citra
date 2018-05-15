@@ -113,6 +113,24 @@ struct PicaFSConfigState {
 
     bool shadow_texture_orthographic;
     float shadow_texture_bias;
+
+    struct {
+        bool enable;
+        float delta_z;
+        Pica::FramebufferRegs::GasDepthFunction depth_function;
+    } gas;
+
+    struct {
+        Pica::TexturingRegs::GasShadingDensitySrc density_src;
+        Pica::FramebufferRegs::GasLutInput lut_input;
+        struct {
+            float min_intensity;
+            float max_intensity;
+            float density_attenuation;
+        } light_xy, light_z;
+        float z_shading_effect;
+        float attenuation;
+    } gas_combiner;
 };
 
 /**

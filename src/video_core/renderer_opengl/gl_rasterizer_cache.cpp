@@ -1447,6 +1447,8 @@ SurfaceSurfaceRect_Tuple RasterizerCacheOpenGL::GetFramebufferSurfaces(
         depth_params.pixel_format = PixelFormat::Shadow;
     } else if (regs.framebuffer.output_merger.fragment_operation_mode ==
                Pica::FramebufferRegs::FragmentOperationMode::Gas) {
+        depth_params.addr = config.GetDepthBufferPhysicalAddress();
+        depth_params.pixel_format = SurfaceParams::PixelFormatFromDepthFormat(config.depth_format);
         color_params.pixel_format = PixelFormat::Gas;
     } else {
         depth_params.addr = config.GetDepthBufferPhysicalAddress();
