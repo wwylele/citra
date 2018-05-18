@@ -698,14 +698,17 @@ static void WriteGasStage(std::string& out, const PicaFSConfig& config) {
 
     switch (state.gas_combiner.density_src) {
     case TexturingRegs::GasShadingDensitySrc::PlainDensity:
+        NGLOG_CRITICAL(HW_GPU, "PlainDensity");
         out += "float d1 = D.x / gas_max;";
         break;
     case TexturingRegs::GasShadingDensitySrc::DepthDensity:
+         NGLOG_CRITICAL(HW_GPU, "DepthDensity");
         out += "float d1 = D.y / gas_max;";
         break;
     }
 
     if (state.gas_combiner.lut_input == FramebufferRegs::GasLutInput::LightFactor) {
+        NGLOG_CRITICAL(HW_GPU, "LightFactor");
         out += "float igi = clamp((1 - d1 * " +
                std::to_string(state.gas_combiner.light_xy.density_attenuation) +
                ") * C.x, 0.0, 1.0);\n";
@@ -717,6 +720,8 @@ static void WriteGasStage(std::string& out, const PicaFSConfig& config) {
         out += "d1 += mix(" + std::to_string(state.gas_combiner.light_z.min_intensity) + "," +
                std::to_string(state.gas_combiner.light_z.max_intensity) + ",isi);\n";
         out += "d1 = clamp(d1, 0.0, 1.0);\n";
+    } else {
+        NGLOG_CRITICAL(HW_GPU, "No Factor");
     }
 
     out += "float d2 = clamp(D.y * 256.0 * " + std::to_string(state.gas_combiner.attenuation) +

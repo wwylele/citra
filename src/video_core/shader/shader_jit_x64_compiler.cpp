@@ -68,7 +68,7 @@ const JitFunction instr_table[64] = {
     nullptr,                   // unknown
     &JitShader::Compile_NOP,   // nop
     &JitShader::Compile_END,   // end
-    nullptr,                   // break
+    &JitShader::Compile_BREAK, // break
     &JitShader::Compile_CALL,  // call
     &JitShader::Compile_CALLC, // callc
     &JitShader::Compile_CALLU, // callu
@@ -584,6 +584,13 @@ void JitShader::Compile_END(Instruction instr) {
     ret();
 }
 
+void JitShader::Compile_BREAK(Instruction instr) {
+    Compile_Assert(looping, "BREAK must be inside a LOOP");
+    loop_break_lable = std::make_unique<Xbyak::Label>();
+    Compile_EvaluateCondition(instr);
+    jnz(*loop_break_lable);
+}
+
 void JitShader::Compile_CALL(Instruction instr) {
     // Push offset of the return
     push(qword, (instr.flow_control.dest_offset + instr.flow_control.num_instructions));
@@ -732,6 +739,11 @@ void JitShader::Compile_LOOP(Instruction instr) {
     add(LOOPCOUNT_REG, LOOPINC); // Increment LOOPCOUNT_REG by Z-component
     sub(LOOPCOUNT, 1);           // Increment loop count by 1
     jnz(l_loop_start);           // Loop if not equal
+
+    if (loop_break_lable) {
+        L(*loop_break_lable);
+        loop_break_lable = nullptr;
+    }
 
     looping = false;
 }
