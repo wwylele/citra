@@ -5,16 +5,24 @@
 #include <cinttypes>
 #include <cstring>
 #include <memory>
+#include <cryptopp/aes.h>
+#include <cryptopp/filters.h>
+#include <cryptopp/modes.h>
+#include <cryptopp/rsa.h>
+#include <cryptopp/sha.h>
 #include "common/common_types.h"
 #include "common/logging/log.h"
 #include "core/core.h"
 #include "core/file_sys/ncch_container.h"
+#include "core/hw/aes/key.h"
 #include "core/loader/loader.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // FileSys namespace
 
 namespace FileSys {
+
+using namespace Loader;
 
 static const int kMaxSections = 8;   ///< Maximum number of sections (files) in an ExeFs
 static const int kBlockSize = 0x200; ///< Size of ExeFS blocks (in bytes)
@@ -149,35 +157,144 @@ Loader::ResultStatus NCCHContainer::Load() {
                 sizeof(ExHeader_Header))
                 return Loader::ResultStatus::Error;
 
-            is_compressed = (exheader_header.codeset_info.flags.flag & 1) == 1;
-            u32 entry_point = exheader_header.codeset_info.text.address;
-            u32 code_size = exheader_header.codeset_info.text.code_size;
-            u32 stack_size = exheader_header.codeset_info.stack_size;
-            u32 bss_size = exheader_header.codeset_info.bss_size;
-            u32 core_version = exheader_header.arm11_system_local_caps.core_version;
-            u8 priority = exheader_header.arm11_system_local_caps.priority;
-            u8 resource_limit_category =
-                exheader_header.arm11_system_local_caps.resource_limit_category;
+            if ((exheader_header.arm11_system_local_caps.program_id & 0xFFFFFFFF) !=
+                (ncch_header.program_id & 0xFFFFFFFF)) {
+                LOG_INFO(Loader, "The ROM is probably encrypted. Trying to decrypt...");
 
-            LOG_DEBUG(Service_FS, "Name:                        %s",
-                      exheader_header.codeset_info.name);
-            LOG_DEBUG(Service_FS, "Program ID:                  %016" PRIX64,
-                      ncch_header.program_id);
-            LOG_DEBUG(Service_FS, "Code compressed:             %s", is_compressed ? "yes" : "no");
-            LOG_DEBUG(Service_FS, "Entry point:                 0x%08X", entry_point);
-            LOG_DEBUG(Service_FS, "Code size:                   0x%08X", code_size);
-            LOG_DEBUG(Service_FS, "Stack size:                  0x%08X", stack_size);
-            LOG_DEBUG(Service_FS, "Bss size:                    0x%08X", bss_size);
-            LOG_DEBUG(Service_FS, "Core version:                %d", core_version);
-            LOG_DEBUG(Service_FS, "Thread priority:             0x%X", priority);
-            LOG_DEBUG(Service_FS, "Resource limit category:     %d", resource_limit_category);
-            LOG_DEBUG(Service_FS, "System Mode:                 %d",
-                      static_cast<int>(exheader_header.arm11_system_local_caps.system_mode));
+                AesContext exheader_aes{{}, {}};
+                if (ncch_header.version == 0 || ncch_header.version == 2) {
+                    LOG_INFO(Loader, "NCCH version 0/2");
+                    std::reverse_copy(ncch_header.partition_id, ncch_header.partition_id + 8,
+                                      exheader_aes.ctr.begin());
+                    exefs_aes = exerfs_code_aes = romfs_aes = exheader_aes;
+                    exheader_aes.ctr[8] = 1;
+                    exefs_aes->ctr[8] = exerfs_code_aes->ctr[8] = 2;
+                    romfs_aes->ctr[8] = 3;
+                } else if (ncch_header.version == 1) {
+                    LOG_INFO(Loader, "MCCH version 1");
+                    std::copy(ncch_header.partition_id, ncch_header.partition_id + 8,
+                              exheader_aes.ctr.begin());
+                    exefs_aes = romfs_aes = exheader_aes;
+                    auto u32ToBEArray = [](u32 value) -> std::array<u8, 4> {
+                        return std::array<u8, 4>{(u8)(value >> 24), (u8)((value >> 16) & 0xFF),
+                                                 (u8)((value >> 8) & 0xFF), (u8)(value & 0xFF)};
+                    };
+                    auto offset_exheader = u32ToBEArray(0x200);
+                    auto offset_exefs = u32ToBEArray(ncch_header.exefs_offset * kBlockSize);
+                    auto offset_romfs = u32ToBEArray(ncch_header.romfs_offset * kBlockSize);
+                    std::copy(offset_exheader.begin(), offset_exheader.end(),
+                              exheader_aes.ctr.begin() + 12);
+                    std::copy(offset_exefs.begin(), offset_exefs.end(),
+                              exefs_aes->ctr.begin() + 12);
+                    std::copy(offset_romfs.begin(), offset_romfs.end(),
+                              romfs_aes->ctr.begin() + 12);
+                    exerfs_code_aes = exefs_aes;
+                } else {
+                    LOG_ERROR(Loader, "Unknown NCCH version %d !", ncch_header.version);
+                    return Loader::ResultStatus::ErrorEncrypted;
+                }
 
-            if (exheader_header.system_info.jump_id != ncch_header.program_id) {
-                LOG_ERROR(Service_FS,
-                          "ExHeader Program ID mismatch: the ROM is probably encrypted.");
-                return Loader::ResultStatus::ErrorEncrypted;
+                if (ncch_header.flags[7] & 1) {
+                    LOG_INFO(Loader, "FixedKey crypto");
+                    std::array<u8, 16> zeros{};
+                    exheader_aes.key = exefs_aes->key = exerfs_code_aes->key = romfs_aes->key =
+                        zeros;
+                } else {
+                    HW::AES::InitKeys();
+                    HW::AES::AESKey key_y;
+                    if (ncch_header.flags[7] & 0x20) {
+                        LOG_ERROR(Loader, "Seed crypto unsupported!");
+                        return ResultStatus::ErrorEncrypted;
+                    }
+
+                    std::memcpy(key_y.data(), ncch_header.signature, sizeof(key_y));
+                    HW::AES::SetKeyY(HW::AES::KeySlotID::NCCH, key_y);
+
+                    if (!HW::AES::IsNormalKeyAvailable(HW::AES::KeySlotID::NCCH)) {
+                        LOG_ERROR(Loader, "slot0x2CKeyX missing! cannot decrypt!");
+                        return ResultStatus::ErrorEncrypted;
+                    }
+
+                    exheader_aes.key = exefs_aes->key =
+                        HW::AES::GetNormalKey(HW::AES::KeySlotID::NCCH);
+
+                    switch (ncch_header.flags[3]) {
+                    case 0:
+                        LOG_INFO(Loader, "Standard crypto");
+                        exerfs_code_aes->key = romfs_aes->key = exheader_aes.key;
+                        break;
+                    case 1:
+                        LOG_INFO(Loader, "7x crypto");
+                        HW::AES::SetKeyY(HW::AES::KeySlotID::NCCH7x, key_y);
+                        if (!HW::AES::IsNormalKeyAvailable(HW::AES::KeySlotID::NCCH7x)) {
+                            LOG_ERROR(Loader, "slot0x25KeyX missing! Cannot decrypt!");
+                            return Loader::ResultStatus::ErrorEncrypted;
+                        }
+                        exerfs_code_aes->key = romfs_aes->key =
+                            HW::AES::GetNormalKey(HW::AES::KeySlotID::NCCH7x);
+                        break;
+                    case 0x0A:
+                        LOG_INFO(Loader, "Secure3 crypto");
+                        HW::AES::SetKeyY(HW::AES::KeySlotID::NCCHSec3, key_y);
+                        if (!HW::AES::IsNormalKeyAvailable(HW::AES::KeySlotID::NCCHSec3)) {
+                            LOG_ERROR(Loader, "slot0x18KeyX missing! Cannot decrypt!");
+                            return Loader::ResultStatus::ErrorEncrypted;
+                        }
+                        exerfs_code_aes->key = romfs_aes->key =
+                            HW::AES::GetNormalKey(HW::AES::KeySlotID::NCCHSec3);
+                        break;
+                    case 0x0B:
+                        LOG_INFO(Loader, "Secure4 crypto");
+                        HW::AES::SetKeyY(HW::AES::KeySlotID::NCCHSec4, key_y);
+                        if (!HW::AES::IsNormalKeyAvailable(HW::AES::KeySlotID::NCCHSec4)) {
+                            LOG_ERROR(Loader, "slot0x1BKeyX missing! Cannot decrypt!");
+                            return Loader::ResultStatus::ErrorEncrypted;
+                        }
+                        exerfs_code_aes->key = romfs_aes->key =
+                            HW::AES::GetNormalKey(HW::AES::KeySlotID::NCCHSec4);
+                        break;
+                    default:
+                        LOG_ERROR(Loader, "Unknown crypto method! Cannot decrypt!");
+                        return Loader::ResultStatus::ErrorEncrypted;
+                    }
+                }
+
+                // Decrypt ExHeader
+                CryptoPP::CTR_Mode<CryptoPP::AES>::Decryption dec;
+                dec.SetKeyWithIV(exheader_aes.key.data(), 16, exheader_aes.ctr.data(), 16);
+                dec.ProcessData((CryptoPP::byte*)&exheader_header,
+                                (CryptoPP::byte*)&exheader_header, sizeof(exheader_header));
+
+                if (exheader_header.arm11_system_local_caps.program_id != ncch_header.program_id) {
+                    LOG_ERROR(Loader, "Cannot decrypt!");
+                    return Loader::ResultStatus::ErrorEncrypted;
+                }
+
+                is_compressed = (exheader_header.codeset_info.flags.flag & 1) == 1;
+                u32 entry_point = exheader_header.codeset_info.text.address;
+                u32 code_size = exheader_header.codeset_info.text.code_size;
+                u32 stack_size = exheader_header.codeset_info.stack_size;
+                u32 bss_size = exheader_header.codeset_info.bss_size;
+                u32 core_version = exheader_header.arm11_system_local_caps.core_version;
+                u8 priority = exheader_header.arm11_system_local_caps.priority;
+                u8 resource_limit_category =
+                    exheader_header.arm11_system_local_caps.resource_limit_category;
+
+                LOG_DEBUG(Service_FS, "Name:                        %s",
+                          exheader_header.codeset_info.name);
+                LOG_DEBUG(Service_FS, "Program ID:                  %016" PRIX64,
+                          ncch_header.program_id);
+                LOG_DEBUG(Service_FS, "Code compressed:             %s",
+                          is_compressed ? "yes" : "no");
+                LOG_DEBUG(Service_FS, "Entry point:                 0x%08X", entry_point);
+                LOG_DEBUG(Service_FS, "Code size:                   0x%08X", code_size);
+                LOG_DEBUG(Service_FS, "Stack size:                  0x%08X", stack_size);
+                LOG_DEBUG(Service_FS, "Bss size:                    0x%08X", bss_size);
+                LOG_DEBUG(Service_FS, "Core version:                %d", core_version);
+                LOG_DEBUG(Service_FS, "Thread priority:             0x%X", priority);
+                LOG_DEBUG(Service_FS, "Resource limit category:     %d", resource_limit_category);
+                LOG_DEBUG(Service_FS, "System Mode:                 %d",
+                          static_cast<int>(exheader_header.arm11_system_local_caps.system_mode));
             }
 
             has_exheader = true;
@@ -194,6 +311,14 @@ Loader::ResultStatus NCCHContainer::Load() {
             file.Seek(exefs_offset + ncch_offset, SEEK_SET);
             if (file.ReadBytes(&exefs_header, sizeof(ExeFs_Header)) != sizeof(ExeFs_Header))
                 return Loader::ResultStatus::Error;
+
+            // Decrypt ExeFS
+            if (exefs_aes) {
+                CryptoPP::CTR_Mode<CryptoPP::AES>::Decryption dec;
+                dec.SetKeyWithIV(exefs_aes->key.data(), 16, exefs_aes->ctr.data(), 16);
+                dec.ProcessData((CryptoPP::byte*)&exefs_header, (CryptoPP::byte*)&exefs_header,
+                                sizeof(exefs_header));
+            }
 
             exefs_file = FileUtil::IOFile(filepath, "rb");
             has_exefs = true;
@@ -306,6 +431,14 @@ Loader::ResultStatus NCCHContainer::LoadSectionExeFS(const char* name, std::vect
                 if (exefs_file.ReadBytes(&temp_buffer[0], section.size) != section.size)
                     return Loader::ResultStatus::Error;
 
+                if (exerfs_code_aes) {
+                    CryptoPP::CTR_Mode<CryptoPP::AES>::Decryption dec;
+                    dec.SetKeyWithIV(exerfs_code_aes->key.data(), 16, exerfs_code_aes->ctr.data(),
+                                     16);
+                    dec.Seek(section.offset + sizeof(ExeFs_Header));
+                    dec.ProcessData(temp_buffer.get(), temp_buffer.get(), section.size);
+                }
+
                 // Decompress .code section...
                 u32 decompressed_size = LZSS_GetDecompressedSize(&temp_buffer[0], section.size);
                 buffer.resize(decompressed_size);
@@ -316,6 +449,14 @@ Loader::ResultStatus NCCHContainer::LoadSectionExeFS(const char* name, std::vect
                 buffer.resize(section.size);
                 if (exefs_file.ReadBytes(&buffer[0], section.size) != section.size)
                     return Loader::ResultStatus::Error;
+
+                auto aes = strcmp(section.name, ".code") == 0 ? exerfs_code_aes : exefs_aes;
+                if (aes) {
+                    CryptoPP::CTR_Mode<CryptoPP::AES>::Decryption dec;
+                    dec.SetKeyWithIV(aes->key.data(), 16, aes->ctr.data(), 16);
+                    dec.Seek(section.offset + sizeof(ExeFs_Header));
+                    dec.ProcessData(buffer.data(), buffer.data(), section.size);
+                }
             }
             return Loader::ResultStatus::Success;
         }
