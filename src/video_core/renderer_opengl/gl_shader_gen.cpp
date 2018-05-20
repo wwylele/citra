@@ -702,7 +702,7 @@ static void WriteGasStage(std::string& out, const PicaFSConfig& config) {
         out += "float d1 = D.x / gas_max;";
         break;
     case TexturingRegs::GasShadingDensitySrc::DepthDensity:
-         NGLOG_CRITICAL(HW_GPU, "DepthDensity");
+        NGLOG_CRITICAL(HW_GPU, "DepthDensity");
         out += "float d1 = D.y / gas_max;";
         break;
     }
