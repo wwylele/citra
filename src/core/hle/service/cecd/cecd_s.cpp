@@ -10,22 +10,24 @@ namespace CECD {
 
 static const Interface::FunctionInfo FunctionTable[] = {
     // cecd:u shared commands
-    {0x000100C2, nullptr, "OpenRawFile"},
-    {0x00020042, nullptr, "ReadRawFile"},
-    {0x00030104, nullptr, "ReadMessage"},
-    {0x00040106, nullptr, "ReadMessageWithHMAC"},
-    {0x00050042, nullptr, "WriteRawFile"},
-    {0x00060104, nullptr, "WriteMessage"},
-    {0x00070106, nullptr, "WriteMessageWithHMAC"},
-    {0x00080102, nullptr, "Delete"},
-    {0x000A00C4, nullptr, "GetSystemInfo"},
-    {0x000B0040, nullptr, "RunCommand"},
-    {0x000C0040, nullptr, "RunCommandAlt"},
+    {0x000100C2, Open, "Open"},
+    {0x00020042, Read, "Read"},
+    {0x00030104, ReadMessage, "ReadMessage"},
+    {0x00040106, ReadMessageWithHMAC, "ReadMessageWithHMAC"},
+    {0x00050042, Write, "Write"},
+    {0x00060104, WriteMessage, "WriteMessage"},
+    {0x00070106, WriteMessageWithHMAC, "WriteMessageWithHMAC"},
+    {0x00080102, Delete, "Delete"},
+    {0x000900C2, cecd9, "cecd9"},
+    {0x000A00C4, GetSystemInfo, "GetSystemInfo"},
+    {0x000B0040, cecdB, "cecdB"},
+    {0x000C0040, cecdC, "cecdC"},
+    {0x000D0082, nullptr, "GetCecInfoBuffer"},
     {0x000E0000, GetCecStateAbbreviated, "GetCecStateAbbreviated"},
     {0x000F0000, GetCecInfoEventHandle, "GetCecInfoEventHandle"},
     {0x00100000, GetChangeStateEventHandle, "GetChangeStateEventHandle"},
-    {0x00110104, nullptr, "OpenAndWrite"},
-    {0x00120104, nullptr, "OpenAndRead"},
+    {0x00110104, OpenAndWrite, "OpenAndWrite"},
+    {0x00120104, OpenAndRead, "OpenAndRead"},
 };
 
 CECD_S::CECD_S() {
