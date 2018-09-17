@@ -445,4 +445,4 @@ if (ARCHITECTURE_x86_64)
     target_link_libraries(core PRIVATE dynarmic)
 endif()
 
-target_link_libraries(core PUBLIC libzmq-headers cppzmq-headers libzmq)
+target_link_libraries(core PUBLIC cppzmq-headers libzmq-static)
