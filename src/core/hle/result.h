@@ -205,6 +205,8 @@ union ResultCode {
     // error
     BitField<31, 1, u32> is_error;
 
+    ResultCode() : raw(0) {}
+
     constexpr explicit ResultCode(u32 raw) : raw(raw) {}
 
     constexpr ResultCode(ErrorDescription description, ErrorModule module, ErrorSummary summary,
@@ -216,10 +218,7 @@ union ResultCode {
         : raw(description.FormatValue(description_) | module.FormatValue(module_) |
               summary.FormatValue(summary_) | level.FormatValue(level_)) {}
 
-    constexpr ResultCode& operator=(const ResultCode& o) {
-        raw = o.raw;
-        return *this;
-    }
+    constexpr ResultCode& operator=(const ResultCode& o) = default;
 
     constexpr bool IsSuccess() const {
         return is_error.ExtractValue(raw) == 0;
