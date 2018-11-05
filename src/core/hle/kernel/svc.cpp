@@ -56,7 +56,7 @@ enum ControlMemoryOperation {
 };
 
 /// Map application or GSP heap memory
-static ResultCode ControlMemory(u32* out_addr, u32 operation, u32 addr0, u32 addr1, u32 size,
+static ResultCode ControlMemory(u32* out_addr, u32 addr0, u32 addr1, u32 size, u32 operation,
                                 u32 permissions) {
     LOG_DEBUG(Kernel_SVC,
               "called operation=0x{:08X}, addr0=0x{:08X}, addr1=0x{:08X}, "
@@ -681,7 +681,7 @@ static void Break(u8 break_reason) {
 }
 
 /// Used to output a message on a debug hardware unit - does nothing on a retail unit
-static void OutputDebugString(VAddr address, int len) {
+static void OutputDebugString(VAddr address, s32 len) {
     if (len <= 0) {
         return;
     }
@@ -748,8 +748,8 @@ static ResultCode GetResourceLimitLimitValues(VAddr values, Handle resource_limi
 }
 
 /// Creates a new thread
-static ResultCode CreateThread(Handle* out_handle, u32 priority, u32 entry_point, u32 arg,
-                               u32 stack_top, s32 processor_id) {
+static ResultCode CreateThread(Handle* out_handle, u32 entry_point, u32 arg, VAddr stack_top,
+                               u32 priority, s32 processor_id) {
     std::string name = fmt::format("thread-{:08X}", entry_point);
 
     if (priority > ThreadPrioLowest) {
