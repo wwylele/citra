@@ -23,8 +23,11 @@ std::atomic<bool> g_hw_shader_accurate_gs;
 std::atomic<bool> g_hw_shader_accurate_mul;
 std::atomic<bool> g_renderer_bg_color_update_requested;
 
+Memory::MemorySystem* g_memory;
+
 /// Initialize the video core
-Core::System::ResultStatus Init(EmuWindow& emu_window) {
+Core::System::ResultStatus Init(EmuWindow& emu_window, Memory::MemorySystem& memory) {
+    g_memory = &memory;
     Pica::Init();
 
     g_renderer = std::make_unique<OpenGL::RendererOpenGL>(emu_window);
